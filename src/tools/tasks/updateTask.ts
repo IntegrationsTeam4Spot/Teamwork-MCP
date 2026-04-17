@@ -12,7 +12,7 @@ import { resolveWorkflowStageByNameForTask } from "./taskLookup.js";
 // Tool definition
 export const updateTaskDefinition = {
   name: "updateTask",
-  description: "Update an existing task. Modify the properties of an existing task.",
+  description: "Update an existing task. Supports direct field updates and optional workflow/stage selection by existing names (exact match, no new workflow/stage creation).",
   inputSchema: {
     type: 'object',
     properties: {
@@ -22,11 +22,11 @@ export const updateTaskDefinition = {
       },
       workflowName: {
         type: 'string',
-        description: 'Optional workflow name to resolve to workflowId when updating task workflow position'
+        description: 'Optional existing workflow name (exact match) to resolve to workflowId when updating task workflow position'
       },
       stageName: {
         type: 'string',
-        description: 'Optional stage name/label to resolve to stageId when updating task workflow position'
+        description: 'Optional existing stage name/label (exact match) to resolve to stageId when updating task workflow position'
       },
       taskRequest: {
         type: 'object',

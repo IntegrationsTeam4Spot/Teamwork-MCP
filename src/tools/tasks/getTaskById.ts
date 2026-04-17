@@ -11,7 +11,7 @@ import { enrichTaskLookupValues } from "./taskLookup.js";
 // Tool definition
 export const getTaskByIdDefinition = {
   name: "getTaskById",
-  description: "Get a specific task by ID from Teamwork",
+  description: "Get a specific task by ID from Teamwork, with enriched lookup details such as project name, task list name, tag names, workflow name, and stage label when resolvable.",
   inputSchema: {
     type: "object",
     properties: {

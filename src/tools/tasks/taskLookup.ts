@@ -18,6 +18,8 @@ interface ResolvedWorkflowStage {
 }
 
 const projectLookupCache = new Map<number, Promise<ProjectLookupData>>();
+const tasklistLookupCache = new Map<number, Promise<{ tasklist?: any; project?: any }>>();
+const tagLookupCache = new Map<number, Promise<any | undefined>>();
 
 function asRecord(value: any): RecordMap {
   if (value && typeof value === "object" && !Array.isArray(value)) {
@@ -245,43 +247,49 @@ async function fetchTaskLookupBundle(taskIds: number[]): Promise<{ tasksById: Re
 async function fetchProjectLookupData(projectId: number): Promise<ProjectLookupData> {
   if (!projectLookupCache.has(projectId)) {
     const promise = (async () => {
-      try {
-        const apiClient = getApiClientForVersion();
-        const response = await apiClient.get(`/projects/${projectId}.json`, {
-          params: {
-            "fields[projects]": ["id", "name"],
-            "fields[workflows]": ["id", "name", "statusId"],
-            "fields[stages]": ["id", "name", "stage"]
-          }
-        });
+      const apiClient = getApiClientForVersion();
+      const baseParams = {
+        "fields[projects]": ["id", "name"],
+        "fields[workflows]": ["id", "name", "statusId"],
+        "fields[stages]": ["id", "name", "stage", "workflowId"]
+      };
+      const requestParams = [
+        { ...baseParams, include: ["workflows", "stages", "workflowStages"] },
+        baseParams
+      ];
 
-        const payload = response?.data ?? {};
-        const included = asRecord(payload.included);
+      for (const params of requestParams) {
+        try {
+          const response = await apiClient.get(`/projects/${projectId}.json`, { params });
+          const payload = response?.data ?? {};
+          const included = asRecord(payload.included);
 
-        const workflowsById: RecordMap = {};
-        const stagesById: RecordMap = {};
+          const workflowsById: RecordMap = {};
+          const stagesById: RecordMap = {};
 
-        mergeMaps(workflowsById, included.workflows);
-        mergeMaps(stagesById, included.stages);
-        mergeMaps(stagesById, included.workflowStages);
+          mergeMaps(workflowsById, included.workflows);
+          mergeMaps(stagesById, included.stages);
+          mergeMaps(stagesById, included.workflowStages);
 
-        const projectName =
-          typeof payload?.project?.name === "string" && payload.project.name.trim()
-            ? payload.project.name.trim()
-            : undefined;
+          const projectName =
+            typeof payload?.project?.name === "string" && payload.project.name.trim()
+              ? payload.project.name.trim()
+              : undefined;
 
-        return {
-          projectName,
-          workflowsById,
-          stagesById
-        };
-      } catch (error: any) {
-        logger.warn(`Failed to load project lookup data for project ${projectId}: ${error.message}`);
-        return {
-          workflowsById: {},
-          stagesById: {}
-        };
+          return {
+            projectName,
+            workflowsById,
+            stagesById
+          };
+        } catch (error: any) {
+          logger.warn(`Failed to load project lookup data for project ${projectId}: ${error.message}`);
+        }
       }
+
+      return {
+        workflowsById: {},
+        stagesById: {}
+      };
     })();
 
     projectLookupCache.set(projectId, promise);
@@ -290,8 +298,132 @@ async function fetchProjectLookupData(projectId: number): Promise<ProjectLookupD
   return projectLookupCache.get(projectId)!;
 }
 
+async function fetchTasklistLookupData(tasklistId: number): Promise<{ tasklist?: any; project?: any }> {
+  if (!tasklistLookupCache.has(tasklistId)) {
+    const promise = (async () => {
+      const apiClient = getApiClientForVersion();
+      const requests = [
+        () => apiClient.get(`/tasklists/${tasklistId}`, {
+          params: {
+            include: ["projects"],
+            "fields[tasklists]": ["id", "name", "projectId"],
+            "fields[projects]": ["id", "name"]
+          }
+        }),
+        () => apiClient.get(`/tasklists/${tasklistId}.json`, {
+          params: {
+            include: ["projects"],
+            "fields[tasklists]": ["id", "name", "projectId"],
+            "fields[projects]": ["id", "name"]
+          }
+        })
+      ];
+
+      for (const request of requests) {
+        try {
+          const response = await request();
+          const payload = response?.data ?? {};
+          const tasklist = payload?.tasklist ?? getById(asRecord(payload?.included?.tasklists), tasklistId);
+          const projectId = toId(tasklist?.projectId) ?? toId(tasklist?.project);
+          const project = projectId ? getById(asRecord(payload?.included?.projects), projectId) : undefined;
+          return { tasklist, project };
+        } catch (_error) {
+          // Try next fallback URL.
+        }
+      }
+
+      return {};
+    })();
+
+    tasklistLookupCache.set(tasklistId, promise);
+  }
+
+  return tasklistLookupCache.get(tasklistId)!;
+}
+
+async function fetchTagById(tagId: number): Promise<any | undefined> {
+  if (!tagLookupCache.has(tagId)) {
+    const promise = (async () => {
+      const apiClient = getApiClientForVersion();
+      try {
+        const response = await apiClient.get(`/tags/${tagId}.json`, {
+          params: {
+            "fields[tags]": ["id", "name", "color", "count"]
+          }
+        });
+
+        const payload = response?.data ?? {};
+        return payload?.tag ?? getById(asRecord(payload?.included?.tags), tagId);
+      } catch (error: any) {
+        logger.warn(`Failed to resolve tag ${tagId}: ${error.message}`);
+        return undefined;
+      }
+    })();
+
+    tagLookupCache.set(tagId, promise);
+  }
+
+  return tagLookupCache.get(tagId)!;
+}
+
 function stageWorkflowId(stage: any): number | undefined {
   return toId(stage?.workflowId) ?? toId(stage?.workflow);
+}
+
+async function fetchTaskForLookup(taskId: number): Promise<{ task?: any; included: RecordMap }> {
+  const apiClient = getApiClientForVersion();
+  const taskPathAttempts = [`/tasks/${taskId}.json`, `/tasks/${taskId}`];
+  const taskParams = {
+    include: ["tasklists"],
+    "fields[tasklists]": ["id", "projectId", "name"]
+  };
+
+  for (const path of taskPathAttempts) {
+    try {
+      const response = await apiClient.get(path, { params: taskParams });
+      const payload = response?.data ?? {};
+      const task =
+        payload?.task ??
+        ensureArray<any>(payload?.tasks).find((item: any) => toId(item?.id) === taskId);
+
+      if (task) {
+        return { task, included: asRecord(payload?.included) };
+      }
+    } catch (error: any) {
+      const status = error?.response?.status;
+      if (status === 404) {
+        continue;
+      }
+      logger.warn(`Failed loading task ${taskId} from ${path}: ${error.message}`);
+    }
+  }
+
+  const listAttempts: Array<{ ids: string | number[] }> = [
+    { ids: [taskId] },
+    { ids: String(taskId) }
+  ];
+
+  for (const params of listAttempts) {
+    try {
+      const response = await apiClient.get("/tasks.json", {
+        params: {
+          ...params,
+          include: ["tasklists"],
+          "fields[tasklists]": ["id", "projectId", "name"]
+        }
+      });
+
+      const payload = response?.data ?? {};
+      const task = ensureArray<any>(payload?.tasks).find((item: any) => toId(item?.id) === taskId);
+      if (task) {
+        return { task, included: asRecord(payload?.included) };
+      }
+    } catch (error: any) {
+      logger.warn(`Failed loading task ${taskId} from /tasks.json: ${error.message}`);
+    }
+  }
+
+  return { included: {} };
 }
 
 export async function enrichTaskLookupValues(payload: any): Promise<any> {
@@ -344,6 +476,52 @@ export async function enrichTaskLookupValues(payload: any): Promise<any> {
 
       if (!Array.isArray(task.tagIds) && Array.isArray(supplementalTask.tagIds)) {
         task.tagIds = supplementalTask.tagIds;
+      }
+    }
+  }
+
+  const unresolvedTasklistIds = new Set<number>();
+  for (const task of tasks) {
+    const tasklistId = tasklistIdFromTask(task);
+    if (tasklistId && !getById(tasklistsById, tasklistId)) {
+      unresolvedTasklistIds.add(tasklistId);
+    }
+  }
+
+  if (unresolvedTasklistIds.size > 0) {
+    const tasklistLookups = await Promise.all(
+      Array.from(unresolvedTasklistIds).map(async (tasklistId) => [tasklistId, await fetchTasklistLookupData(tasklistId)] as const)
+    );
+
+    for (const [tasklistId, lookup] of tasklistLookups) {
+      if (lookup.tasklist) {
+        tasklistsById[String(tasklistId)] = lookup.tasklist;
+      }
+
+      const projectId = toId(lookup.tasklist?.projectId) ?? toId(lookup.tasklist?.project);
+      if (projectId && lookup.project) {
+        projectsById[String(projectId)] = lookup.project;
+      }
+    }
+  }
+
+  const unresolvedTagIds = new Set<number>();
+  for (const task of tasks) {
+    for (const tagId of collectTagIds(task)) {
+      if (!getById(tagsById, tagId)) {
+        unresolvedTagIds.add(tagId);
+      }
+    }
+  }
+
+  if (unresolvedTagIds.size > 0) {
+    const resolvedTags = await Promise.all(
+      Array.from(unresolvedTagIds).map(async (tagId) => [tagId, await fetchTagById(tagId)] as const)
+    );
+
+    for (const [tagId, tag] of resolvedTags) {
+      if (tag) {
+        tagsById[String(tagId)] = tag;
       }
     }
   }
@@ -521,23 +699,23 @@ export async function resolveWorkflowStageByNameForTask(
     throw new Error("A valid taskId is required to resolve workflow/stage by name.");
   }
 
-  const apiClient = getApiClientForVersion();
-  const response = await apiClient.get("/tasks.json", {
-    params: {
-      ids: [parsedTaskId],
-      include: ["tasklists"],
-      "fields[tasklists]": ["id", "projectId", "name"]
-    }
-  });
-
-  const payload = response?.data ?? {};
-  const task = ensureArray<any>(payload.tasks).find((item: any) => toId(item?.id) === parsedTaskId);
+  const { task, included } = await fetchTaskForLookup(parsedTaskId);
   if (!task) {
     throw new Error(`Task ${parsedTaskId} was not found.`);
   }
 
-  const tasklistsById = asRecord(payload?.included?.tasklists);
-  const projectId = projectIdForTask(task, tasklistsById);
+  const tasklistsById = asRecord(included?.tasklists);
+  let projectId = projectIdForTask(task, tasklistsById);
+
+  if (!projectId) {
+    const tasklistId = tasklistIdFromTask(task);
+    if (tasklistId) {
+      const tasklistLookup = await fetchTasklistLookupData(tasklistId);
+      projectId =
+        toId(tasklistLookup?.tasklist?.projectId) ??
+        toId(tasklistLookup?.tasklist?.project);
+    }
+  }
 
   if (!projectId) {
     throw new Error(`Unable to determine projectId for task ${parsedTaskId}.`);
