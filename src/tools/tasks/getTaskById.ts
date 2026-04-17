@@ -6,6 +6,7 @@
 import logger from "../../utils/logger.js"; 
 import teamworkService from "../../services/index.js";
 import { createErrorResponse } from "../../utils/errorHandler.js";
+import { enrichTaskLookupValues } from "./taskLookup.js";
 
 // Tool definition
 export const getTaskByIdDefinition = {
@@ -41,11 +42,12 @@ export async function handleGetTaskById(input: any) {
     }
     
     const task = await teamworkService.getTaskById(taskId);
+    const enrichedTask = await enrichTaskLookupValues(task);
     
     return {
       content: [{
         type: "text",
-        text: JSON.stringify(task, null, 2)
+        text: JSON.stringify(enrichedTask, null, 2)
       }]
     };
   } catch (error: any) {

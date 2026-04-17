@@ -6,8 +6,8 @@
 import logger from "../../utils/logger.js";
 import teamworkService from "../../services/index.js";
 import { TaskRequest } from "../../models/TaskRequest.js";
-import { TaskTask } from "../../models/TaskTask.js";
 import { createErrorResponse } from "../../utils/errorHandler.js";
+import { resolveWorkflowStageByNameForTask } from "./taskLookup.js";
 
 // Tool definition
 export const updateTaskDefinition = {
@@ -19,6 +19,14 @@ export const updateTaskDefinition = {
       taskId: {
         type: 'integer',
         description: 'The ID of the task to update'
+      },
+      workflowName: {
+        type: 'string',
+        description: 'Optional workflow name to resolve to workflowId when updating task workflow position'
+      },
+      stageName: {
+        type: 'string',
+        description: 'Optional stage name/label to resolve to stageId when updating task workflow position'
       },
       taskRequest: {
         type: 'object',
@@ -491,7 +499,7 @@ export const updateTaskDefinition = {
         description: 'The task data to update'
       }
     },
-    required: ['taskId', 'taskRequest']
+    required: ['taskId']
   },
   annotations: {
     title: "Update a Task",
@@ -507,7 +515,9 @@ export async function handleUpdateTask(input: any) {
   try {
     
     const taskId = input.taskId;
-    const taskRequest = input.taskRequest as TaskRequest;
+    const taskRequest = (input.taskRequest ?? {}) as TaskRequest;
+    const workflowName = typeof input.workflowName === "string" ? input.workflowName.trim() : undefined;
+    const stageName = typeof input.stageName === "string" ? input.stageName.trim() : undefined;
 
     if (!taskId) {
       logger.error("Invalid request: missing taskId");
@@ -519,14 +529,36 @@ export async function handleUpdateTask(input: any) {
       };
     }
     
-    if (!taskRequest || !taskRequest.task) {
+    const hasTaskContent = !!taskRequest.task || !!taskRequest.workflows;
+    const hasNameBasedWorkflowInput = !!workflowName || !!stageName;
+
+    if (!hasTaskContent && !hasNameBasedWorkflowInput) {
       return {
         content: [{
           type: "text",
-          text: "Invalid request: missing taskRequest.task. Please provide task data to update."
+          text: "Invalid request: provide taskRequest content and/or workflowName/stageName."
         }]
       };
-    }    
+    }
+
+    if (hasNameBasedWorkflowInput) {
+      const resolved = await resolveWorkflowStageByNameForTask(taskId, workflowName, stageName);
+      taskRequest.workflows = taskRequest.workflows ?? {};
+
+      if (resolved.workflowId) {
+        taskRequest.workflows.workflowId = resolved.workflowId;
+      }
+      if (resolved.stageId) {
+        taskRequest.workflows.stageId = resolved.stageId;
+      }
+
+      logger.info(
+        `Resolved workflow/stage by name for task ${taskId}: ` +
+        `workflow='${resolved.workflowName ?? "n/a"}' (${resolved.workflowId ?? "n/a"}), ` +
+        `stage='${resolved.stageName ?? "n/a"}' (${resolved.stageId ?? "n/a"})`
+      );
+    }
+
     // Call the service to update the task
     const response = await teamworkService.updateTask(taskId.toString(), taskRequest);
        

@@ -16,7 +16,15 @@ export const getCurrentProject = async (projectId: string) => {
     }
     
     const api = ensureApiClient();
-    const response = await api.get(`/projects/${projectId}.json`);
+    const response = await api.get(`/projects/${projectId}.json`, {
+      params: {
+        include: ['tags', 'projectCategories', 'users', 'projectOwners', 'createdBy', 'updatedBy'],
+        'fields[projects]': ['id', 'name'],
+        'fields[tags]': ['id', 'name', 'color', 'count'],
+        'fields[workflows]': ['id', 'name', 'statusId'],
+        'fields[stages]': ['id', 'name', 'stage']
+      }
+    });
     return response.data;
   } catch (error: any) {
     logger.error(`Error getting current project: ${error.message}`);

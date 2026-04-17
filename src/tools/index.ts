@@ -18,6 +18,7 @@ import { createTaskDefinition as createTask, handleCreateTask } from './tasks/cr
 import { createSubTaskDefinition as createSubTask, handleCreateSubTask } from './tasks/createSubTask.js';
 import { updateTaskDefinition as updateTask, handleUpdateTask } from './tasks/updateTask.js';
 import { deleteTaskDefinition as deleteTask, handleDeleteTask } from './tasks/deleteTask.js';
+import { uncompleteTaskDefinition as uncompleteTask, handleUncompleteTask } from './tasks/uncompleteTask.js';
 import { getTasksMetricsCompleteDefinition as getTasksMetricsComplete, handleGetTasksMetricsComplete } from './tasks/getTasksMetricsComplete.js';
 import { getTasksMetricsLateDefinition as getTasksMetricsLate, handleGetTasksMetricsLate } from './tasks/getTasksMetricsLate.js';
 import { getTaskSubtasksDefinition as getTaskSubtasks, handleGetTaskSubtasks } from './tasks/getTaskSubtasks.js';
@@ -75,6 +76,7 @@ const toolPairs: ToolPair[] = [
   { definition: createSubTask, handler: handleCreateSubTask },
   { definition: updateTask, handler: handleUpdateTask },
   { definition: deleteTask, handler: handleDeleteTask },
+  { definition: uncompleteTask, handler: handleUncompleteTask },
   { definition: getTasksMetricsComplete, handler: handleGetTasksMetricsComplete },
   { definition: getTasksMetricsLate, handler: handleGetTasksMetricsLate },
   { definition: getTaskSubtasks, handler: handleGetTaskSubtasks },
@@ -123,6 +125,7 @@ export { handleCreateTask } from './tasks/createTask.js';
 export { handleCreateSubTask } from './tasks/createSubTask.js';
 export { handleUpdateTask } from './tasks/updateTask.js';
 export { handleDeleteTask } from './tasks/deleteTask.js';
+export { handleUncompleteTask } from './tasks/uncompleteTask.js';
 export { handleGetTasksMetricsComplete } from './tasks/getTasksMetricsComplete.js';
 export { handleGetTasksMetricsLate } from './tasks/getTasksMetricsLate.js';
 export { handleGetTaskSubtasks } from './tasks/getTaskSubtasks.js';

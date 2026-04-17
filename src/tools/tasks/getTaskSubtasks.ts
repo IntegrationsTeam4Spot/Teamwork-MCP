@@ -31,6 +31,7 @@
 import logger from "../../utils/logger.js";
 import { getApiClientForVersion } from "../../services/core/apiClient.js";
 import { createErrorResponse } from "../../utils/errorHandler.js";
+import { enrichTaskLookupValues } from "./taskLookup.js";
 
 // Tool definition
 export const getTaskSubtasksDefinition = {
@@ -85,6 +86,21 @@ export async function handleGetTaskSubtasks(input: any) {
     Object.keys(queryParams).forEach(key => 
       queryParams[key] === undefined && delete queryParams[key]
     );
+
+    const includeValues = new Set<string>(Array.isArray(queryParams.include) ? queryParams.include : []);
+    includeValues.add("projects");
+    includeValues.add("tasklists");
+    includeValues.add("tags");
+    queryParams.include = Array.from(includeValues);
+    if (queryParams["fields[tasklists]"] === undefined) {
+      queryParams["fields[tasklists]"] = ["id", "name", "projectId"];
+    }
+    if (queryParams["fields[projects]"] === undefined) {
+      queryParams["fields[projects]"] = ["id", "name"];
+    }
+    if (queryParams["fields[tags]"] === undefined) {
+      queryParams["fields[tags]"] = ["id", "name"];
+    }
     
     // Make API call
     const apiClient = getApiClientForVersion();
@@ -92,11 +108,12 @@ export async function handleGetTaskSubtasks(input: any) {
       `/tasks/${taskId}/subtasks.json`, 
       { params: queryParams }
     );
+    const enrichedResponse = await enrichTaskLookupValues(response.data);
     
     return {
       content: [{
         type: "text",
-        text: JSON.stringify(response.data, null, 2)
+        text: JSON.stringify(enrichedResponse, null, 2)
       }]
     };
   } catch (error: any) {

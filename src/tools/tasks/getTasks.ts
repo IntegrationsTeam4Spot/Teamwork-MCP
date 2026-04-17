@@ -6,6 +6,7 @@
 import logger from "../../utils/logger.js";
 import teamworkService from "../../services/index.js";
 import { createErrorResponse } from "../../utils/errorHandler.js";
+import { enrichTaskLookupValues } from "./taskLookup.js";
 
 // Tool definition
 export const getTasksDefinition = {
@@ -1013,15 +1014,32 @@ export async function handleGetTasks(input: any) {
       delete apiInput[camelCaseKey];
     }
   }
+
+  const includeValues = new Set<string>(Array.isArray(apiInput.include) ? apiInput.include : []);
+  includeValues.add("projects");
+  includeValues.add("tasklists");
+  includeValues.add("tags");
+  apiInput.include = Array.from(includeValues);
+
+  if (apiInput["fields[projects]"] === undefined) {
+    apiInput["fields[projects]"] = ["id", "name"];
+  }
+  if (apiInput["fields[tasklists]"] === undefined) {
+    apiInput["fields[tasklists]"] = ["id", "name", "projectId"];
+  }
+  if (apiInput["fields[tags]"] === undefined) {
+    apiInput["fields[tags]"] = ["id", "name"];
+  }
   
   try {
     const tasks = await teamworkService.getTasks(apiInput);
+    const enrichedTasks = await enrichTaskLookupValues(tasks);
     logger.info("Tasks response received");
     
     return {
       content: [{
         type: "text",
-        text: JSON.stringify(tasks, null, 2)
+        text: JSON.stringify(enrichedTasks, null, 2)
       }]
     };
   } catch (error: any) {

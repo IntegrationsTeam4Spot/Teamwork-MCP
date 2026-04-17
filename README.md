@@ -40,6 +40,7 @@ The following tools are available through the MCP server:
 - `createSubTask` - Create a new subtask under a parent task in Teamwork
 - `updateTask` - Update an existing task in Teamwork
 - `deleteTask` - Delete a task from Teamwork
+- `uncompleteTask` - Mark a completed task as incomplete and optionally reset progress to 0
 - `getTasksMetricsComplete` - Get the total count of completed tasks in Teamwork
 - `getTasksMetricsLate` - Get the total count of late tasks in Teamwork
 - `getTaskSubtasks` - Get all subtasks for a specific task in Teamwork
