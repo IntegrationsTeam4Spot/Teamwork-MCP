@@ -20,6 +20,14 @@ export const updateTaskDefinition = {
         type: 'integer',
         description: 'The ID of the task to update'
       },
+      workflowId: {
+        type: 'integer',
+        description: 'Optional existing workflow ID shortcut. Mapped to taskRequest.workflows.workflowId'
+      },
+      workflowStageId: {
+        type: 'integer',
+        description: 'Optional existing workflow stage ID shortcut. Mapped to taskRequest.workflows.stageId'
+      },
       workflowName: {
         type: 'string',
         description: 'Optional existing workflow name (exact match) to resolve to workflowId when updating task workflow position'
@@ -487,6 +495,10 @@ export const updateTaskDefinition = {
               stageId: {
                 type: 'integer'
               },
+              workflowStageId: {
+                type: 'integer',
+                description: 'Alias of stageId; will be normalized to stageId before update'
+              },
               workflowId: {
                 type: 'integer'
               }
@@ -513,9 +525,23 @@ export const updateTaskDefinition = {
 export async function handleUpdateTask(input: any) {
   logger.verbose("=== updateTask tool called ===");  
   try {
+    const parseOptionalInteger = (value: any): number | undefined => {
+      if (typeof value === "number" && Number.isFinite(value)) {
+        return Math.trunc(value);
+      }
+      if (typeof value === "string") {
+        const trimmed = value.trim();
+        if (/^\d+$/.test(trimmed)) {
+          return Number(trimmed);
+        }
+      }
+      return undefined;
+    };
     
     const taskId = input.taskId;
     const taskRequest = (input.taskRequest ?? {}) as TaskRequest;
+    const workflowIdShortcut = parseOptionalInteger(input.workflowId);
+    const workflowStageIdShortcut = parseOptionalInteger(input.workflowStageId);
     const workflowName = typeof input.workflowName === "string" ? input.workflowName.trim() : undefined;
     const stageName = typeof input.stageName === "string" ? input.stageName.trim() : undefined;
 
@@ -528,7 +554,35 @@ export async function handleUpdateTask(input: any) {
         }]
       };
     }
-    
+
+    taskRequest.workflows = taskRequest.workflows ?? {};
+    const workflowsAny = taskRequest.workflows as any;
+    const nestedWorkflowStageId = parseOptionalInteger(workflowsAny.workflowStageId);
+    const nestedStageId = parseOptionalInteger(workflowsAny.stageId);
+    const nestedWorkflowId = parseOptionalInteger(workflowsAny.workflowId);
+
+    if (workflowIdShortcut !== undefined) {
+      taskRequest.workflows.workflowId = workflowIdShortcut;
+    } else if (nestedWorkflowId !== undefined) {
+      taskRequest.workflows.workflowId = nestedWorkflowId;
+    }
+
+    if (workflowStageIdShortcut !== undefined) {
+      taskRequest.workflows.stageId = workflowStageIdShortcut;
+    } else if (nestedStageId !== undefined) {
+      taskRequest.workflows.stageId = nestedStageId;
+    } else if (nestedWorkflowStageId !== undefined) {
+      taskRequest.workflows.stageId = nestedWorkflowStageId;
+    }
+
+    if ("workflowStageId" in workflowsAny) {
+      delete workflowsAny.workflowStageId;
+    }
+
+    if (Object.keys(taskRequest.workflows).length === 0) {
+      delete (taskRequest as any).workflows;
+    }
+
     const hasTaskContent = !!taskRequest.task || !!taskRequest.workflows;
     const hasNameBasedWorkflowInput = !!workflowName || !!stageName;
 
@@ -536,7 +590,7 @@ export async function handleUpdateTask(input: any) {
       return {
         content: [{
           type: "text",
-          text: "Invalid request: provide taskRequest content and/or workflowName/stageName."
+          text: "Invalid request: provide taskRequest content and/or workflowStageId/workflowId and/or workflowName/stageName."
         }]
       };
     }
