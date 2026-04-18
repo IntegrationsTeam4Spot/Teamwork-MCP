@@ -14,7 +14,7 @@ import path from "path";
 // Tool definition
 export const updateTaskDefinition = {
   name: "updateTask",
-  description: "Update an existing task. Supports direct field updates and optional workflow/stage selection by existing names (resolves to IDs with closest-match fallback, no new workflow/stage creation).",
+  description: "Update an existing task. Supports direct field updates and workflow-stage moves. For deterministic stage moves, resolve IDs first with getWorkflowStages/getProjectWorkflowStages, then pass workflowStageId/stageId.",
   inputSchema: {
     type: 'object',
     properties: {
@@ -28,15 +28,15 @@ export const updateTaskDefinition = {
       },
       workflowId: {
         type: 'integer',
-        description: 'Optional existing workflow ID shortcut. Mapped to taskRequest.workflows.workflowId'
+        description: 'Optional existing workflow ID shortcut. Mapped to taskRequest.workflows.workflowId. Prefer this over workflowName when possible.'
       },
       workflowStageId: {
         type: 'integer',
-        description: 'Optional existing workflow stage ID shortcut. Mapped to taskRequest.workflows.stageId. Preferred for deterministic updates.'
+        description: 'Optional existing workflow stage ID shortcut. Mapped to taskRequest.workflows.stageId. Preferred for deterministic updates. You can find this with getWorkflowStages.'
       },
       workflowName: {
         type: 'string',
-        description: 'Optional existing workflow name. Tool resolves this to workflowId before update.'
+        description: 'Optional existing workflow name. Tool resolves this to workflowId before update. If a numeric string is provided (e.g. "2205"), it is treated as workflowId.'
       },
       stageName: {
         type: 'string',
@@ -781,7 +781,9 @@ export async function handleUpdateTask(input: any) {
     const projectIdFallback = parseOptionalInteger(input.projectId);
     const workflowIdShortcut = parseOptionalInteger(input.workflowId);
     const workflowStageIdShortcut = parseOptionalInteger(input.workflowStageId);
-    const workflowName = typeof input.workflowName === "string" ? input.workflowName.trim() : undefined;
+    const workflowNameInput = typeof input.workflowName === "string" ? input.workflowName.trim() : undefined;
+    const workflowIdFromWorkflowName = parseOptionalInteger(workflowNameInput);
+    const workflowName = workflowIdFromWorkflowName !== undefined ? undefined : workflowNameInput;
     const stageName = typeof input.stageName === "string" ? input.stageName.trim() : undefined;
 
     if (!taskId) {
@@ -800,8 +802,10 @@ export async function handleUpdateTask(input: any) {
     const nestedStageId = parseOptionalInteger(workflowsAny.stageId);
     const nestedWorkflowId = parseOptionalInteger(workflowsAny.workflowId);
 
-    if (workflowIdShortcut !== undefined) {
-      taskRequest.workflows.workflowId = workflowIdShortcut;
+    const effectiveWorkflowId = workflowIdShortcut ?? workflowIdFromWorkflowName;
+
+    if (effectiveWorkflowId !== undefined) {
+      taskRequest.workflows.workflowId = effectiveWorkflowId;
     } else if (nestedWorkflowId !== undefined) {
       taskRequest.workflows.workflowId = nestedWorkflowId;
     }
@@ -849,7 +853,12 @@ export async function handleUpdateTask(input: any) {
 
         const projectId = resolveWorkspaceProjectId(projectIdFallback);
         if (!projectId) {
-          throw primaryError;
+          throw new Error(
+            `${primaryError.message}\n\n` +
+            "Name-based stage/workflow updates need project context when task lookup cannot resolve it. " +
+            "Provide projectId (or configure TEAMWORK_PROJECT_ID/.teamwork/teamwork.config.json), " +
+            "or update by workflowStageId/stageId directly."
+          );
         }
 
         resolved = await resolveNamesFromProjectLookup(projectId, {
