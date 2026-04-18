@@ -69,6 +69,7 @@ export interface ProjectQueryParams {
   'fields[users]'?: string[];
   'fields[tags]'?: string[];
   'fields[stages]'?: string[];
+  'fields[workflowStages]'?: string[];
   'fields[projects]'?: string[];
   'fields[projectcategories]'?: string[];
   'fields[projectUpdates]'?: string[];

@@ -8,11 +8,13 @@ import teamworkService from "../../services/index.js";
 import { TaskRequest } from "../../models/TaskRequest.js";
 import { createErrorResponse } from "../../utils/errorHandler.js";
 import { resolveWorkflowStageByNameForTask } from "./taskLookup.js";
+import fs from "fs";
+import path from "path";
 
 // Tool definition
 export const updateTaskDefinition = {
   name: "updateTask",
-  description: "Update an existing task. Supports direct field updates and optional workflow/stage selection by existing names (exact match, no new workflow/stage creation).",
+  description: "Update an existing task. Supports direct field updates and optional workflow/stage selection by existing names (resolves to IDs with closest-match fallback, no new workflow/stage creation).",
   inputSchema: {
     type: 'object',
     properties: {
@@ -20,21 +22,25 @@ export const updateTaskDefinition = {
         type: 'integer',
         description: 'The ID of the task to update'
       },
+      projectId: {
+        type: 'integer',
+        description: 'Optional Teamwork project ID used as fallback context when resolving workflow/stage names to IDs'
+      },
       workflowId: {
         type: 'integer',
         description: 'Optional existing workflow ID shortcut. Mapped to taskRequest.workflows.workflowId'
       },
       workflowStageId: {
         type: 'integer',
-        description: 'Optional existing workflow stage ID shortcut. Mapped to taskRequest.workflows.stageId'
+        description: 'Optional existing workflow stage ID shortcut. Mapped to taskRequest.workflows.stageId. Preferred for deterministic updates.'
       },
       workflowName: {
         type: 'string',
-        description: 'Optional existing workflow name (exact match) to resolve to workflowId when updating task workflow position'
+        description: 'Optional existing workflow name. Tool resolves this to workflowId before update.'
       },
       stageName: {
         type: 'string',
-        description: 'Optional existing stage name/label (exact match) to resolve to stageId when updating task workflow position'
+        description: 'Optional existing stage name/label. Tool resolves this to stageId before update, using closest match fallback when needed.'
       },
       taskRequest: {
         type: 'object',
@@ -521,25 +527,258 @@ export const updateTaskDefinition = {
   }
 };
 
+function normalizeName(value: string): string {
+  return value.trim().toLowerCase();
+}
+
+function parseOptionalInteger(value: any): number | undefined {
+  if (typeof value === "number" && Number.isFinite(value)) {
+    return Math.trunc(value);
+  }
+  if (typeof value === "string") {
+    const trimmed = value.trim();
+    if (/^\d+$/.test(trimmed)) {
+      return Number(trimmed);
+    }
+  }
+  return undefined;
+}
+
+function getStageDisplayName(stage: any): string {
+  if (typeof stage?.name === "string" && stage.name.trim()) {
+    return stage.name.trim();
+  }
+  if (typeof stage?.stage === "string" && stage.stage.trim()) {
+    return stage.stage.trim();
+  }
+  return "";
+}
+
+function tokenSet(value: string): Set<string> {
+  return new Set(
+    value
+      .split(/[^a-z0-9]+/i)
+      .map((token) => token.trim().toLowerCase())
+      .filter(Boolean)
+  );
+}
+
+function scoreNameMatch(targetRaw: string, candidateRaw: string): number {
+  const target = normalizeName(targetRaw);
+  const candidate = normalizeName(candidateRaw);
+
+  if (!target || !candidate) {
+    return 0;
+  }
+  if (target === candidate) {
+    return 1000;
+  }
+
+  const targetCompact = target.replace(/[^a-z0-9]/g, "");
+  const candidateCompact = candidate.replace(/[^a-z0-9]/g, "");
+  if (targetCompact && targetCompact === candidateCompact) {
+    return 950;
+  }
+  if (candidate.startsWith(target) || target.startsWith(candidate)) {
+    return 850;
+  }
+  if (candidate.includes(target) || target.includes(candidate)) {
+    return 750;
+  }
+
+  const targetTokens = tokenSet(target);
+  const candidateTokens = tokenSet(candidate);
+  if (targetTokens.size === 0 || candidateTokens.size === 0) {
+    return 0;
+  }
+
+  let overlap = 0;
+  for (const token of targetTokens) {
+    if (candidateTokens.has(token)) {
+      overlap += 1;
+    }
+  }
+
+  if (overlap === 0) {
+    return 0;
+  }
+
+  const jaccard = overlap / (targetTokens.size + candidateTokens.size - overlap);
+  return Math.round(jaccard * 700);
+}
+
+function bestNameMatch<T>(
+  target: string,
+  candidates: T[],
+  nameSelector: (item: T) => string
+): { match?: T; score: number; ties: number } {
+  let winner: T | undefined;
+  let bestScore = 0;
+  let ties = 0;
+
+  for (const candidate of candidates) {
+    const candidateName = nameSelector(candidate);
+    const score = scoreNameMatch(target, candidateName);
+    if (score > bestScore) {
+      winner = candidate;
+      bestScore = score;
+      ties = 1;
+    } else if (score > 0 && score === bestScore) {
+      ties += 1;
+    }
+  }
+
+  return { match: winner, score: bestScore, ties };
+}
+
+function extractProjectIdFromTeamworkFile(filePath: string): string | null {
+  const content = fs.readFileSync(filePath, "utf8");
+  const match = content.match(/PROJECTID=(\d+)/i);
+  return match ? String(parseInt(match[1], 10)) : null;
+}
+
+function extractProjectIdFromConfig(filePath: string): string | null {
+  const raw = fs.readFileSync(filePath, "utf8");
+  const config = JSON.parse(raw);
+  if (config?.teamworkProjectId !== undefined && config?.teamworkProjectId !== null && String(config.teamworkProjectId).trim() !== "") {
+    return String(config.teamworkProjectId);
+  }
+  if (config?.projectId !== undefined && config?.projectId !== null && String(config.projectId).trim() !== "") {
+    return String(config.projectId);
+  }
+  return null;
+}
+
+function resolveWorkspaceProjectId(inputProjectId?: number): number | undefined {
+  if (inputProjectId !== undefined) {
+    return inputProjectId;
+  }
+
+  const roots = [process.env.SOLUTION_ROOT_PATH, process.cwd()].filter((value): value is string => !!value);
+  for (const root of roots) {
+    const teamworkPath = path.resolve(root, ".teamwork");
+    if (fs.existsSync(teamworkPath)) {
+      try {
+        const projectId = extractProjectIdFromTeamworkFile(teamworkPath);
+        const parsed = parseOptionalInteger(projectId);
+        if (parsed) {
+          return parsed;
+        }
+      } catch (error: any) {
+        logger.warn(`Failed reading ${teamworkPath}: ${error.message}`);
+      }
+    }
+
+    const configPath = path.resolve(root, "teamwork.config.json");
+    if (fs.existsSync(configPath)) {
+      try {
+        const projectId = extractProjectIdFromConfig(configPath);
+        const parsed = parseOptionalInteger(projectId);
+        if (parsed) {
+          return parsed;
+        }
+      } catch (error: any) {
+        logger.warn(`Failed reading ${configPath}: ${error.message}`);
+      }
+    }
+  }
+
+  return parseOptionalInteger(process.env.TEAMWORK_PROJECT_ID);
+}
+
+async function resolveNamesFromProjectLookup(
+  projectId: number,
+  options: {
+    workflowId?: number;
+    workflowName?: string;
+    stageName?: string;
+  }
+): Promise<{ workflowId?: number; workflowName?: string; stageId?: number; stageName?: string }> {
+  const lookup = await teamworkService.getProjectWorkflowStages(String(projectId));
+
+  let workflows = lookup.workflows ?? [];
+  let stages = lookup.stages ?? [];
+
+  if (options.workflowId !== undefined) {
+    workflows = workflows.filter((workflow: any) => workflow.id === options.workflowId);
+    stages = stages.filter((stage: any) => stage.workflowId === options.workflowId);
+  }
+
+  let resolvedWorkflowId = options.workflowId;
+  let resolvedWorkflowName: string | undefined;
+
+  if (options.workflowName) {
+    const workflowMatch = bestNameMatch(options.workflowName, workflows, (workflow: any) => String(workflow.name ?? ""));
+    if (!workflowMatch.match || workflowMatch.score < 450) {
+      const available = workflows.map((workflow: any) => workflow.name).filter((name: any) => typeof name === "string").join(", ");
+      throw new Error(
+        available
+          ? `Workflow '${options.workflowName}' was not found in project ${projectId}. Available workflows: ${available}`
+          : `Workflow '${options.workflowName}' was not found in project ${projectId}.`
+      );
+    }
+    if (workflowMatch.ties > 1 && workflowMatch.score < 1000) {
+      throw new Error(`Workflow '${options.workflowName}' is ambiguous in project ${projectId}. Please provide workflowId.`);
+    }
+
+    resolvedWorkflowId = workflowMatch.match.id;
+    resolvedWorkflowName = workflowMatch.match.name;
+    stages = stages.filter((stage: any) => stage.workflowId === resolvedWorkflowId);
+  } else if (resolvedWorkflowId !== undefined) {
+    const workflow = workflows.find((item: any) => item.id === resolvedWorkflowId);
+    resolvedWorkflowName = workflow?.name;
+  }
+
+  if (!options.stageName) {
+    return {
+      workflowId: resolvedWorkflowId,
+      workflowName: resolvedWorkflowName
+    };
+  }
+
+  const stageCandidates = stages.map((stage: any) => ({
+    ...stage,
+    _displayName: getStageDisplayName(stage)
+  })).filter((stage: any) => stage._displayName);
+
+  const stageMatch = bestNameMatch(options.stageName, stageCandidates, (stage: any) => stage._displayName);
+  if (!stageMatch.match || stageMatch.score < 450) {
+    const available = stageCandidates.map((stage: any) => stage._displayName).join(", ");
+    throw new Error(
+      available
+        ? `Stage '${options.stageName}' was not found in project ${projectId}. Available stages: ${available}`
+        : `Stage '${options.stageName}' was not found in project ${projectId}.`
+    );
+  }
+  if (stageMatch.ties > 1 && stageMatch.score < 1000) {
+    throw new Error(`Stage '${options.stageName}' is ambiguous in project ${projectId}. Please provide workflowName or workflowId.`);
+  }
+
+  const resolvedStageId = parseOptionalInteger(stageMatch.match.id);
+  const resolvedStageName = stageMatch.match._displayName;
+
+  if (!resolvedWorkflowId && stageMatch.match.workflowId) {
+    resolvedWorkflowId = parseOptionalInteger(stageMatch.match.workflowId);
+    const workflow = (lookup.workflows ?? []).find((item: any) => item.id === resolvedWorkflowId);
+    resolvedWorkflowName = workflow?.name ?? resolvedWorkflowName;
+  }
+
+  return {
+    workflowId: resolvedWorkflowId,
+    workflowName: resolvedWorkflowName,
+    stageId: resolvedStageId,
+    stageName: resolvedStageName
+  };
+}
+
 // Tool handler
 export async function handleUpdateTask(input: any) {
   logger.verbose("=== updateTask tool called ===");  
   try {
-    const parseOptionalInteger = (value: any): number | undefined => {
-      if (typeof value === "number" && Number.isFinite(value)) {
-        return Math.trunc(value);
-      }
-      if (typeof value === "string") {
-        const trimmed = value.trim();
-        if (/^\d+$/.test(trimmed)) {
-          return Number(trimmed);
-        }
-      }
-      return undefined;
-    };
     
     const taskId = input.taskId;
     const taskRequest = (input.taskRequest ?? {}) as TaskRequest;
+    const projectIdFallback = parseOptionalInteger(input.projectId);
     const workflowIdShortcut = parseOptionalInteger(input.workflowId);
     const workflowStageIdShortcut = parseOptionalInteger(input.workflowStageId);
     const workflowName = typeof input.workflowName === "string" ? input.workflowName.trim() : undefined;
@@ -596,13 +835,40 @@ export async function handleUpdateTask(input: any) {
     }
 
     if (hasNameBasedWorkflowInput) {
-      const resolved = await resolveWorkflowStageByNameForTask(taskId, workflowName, stageName);
       taskRequest.workflows = taskRequest.workflows ?? {};
+      const preferredWorkflowId = parseOptionalInteger(taskRequest.workflows.workflowId);
 
-      if (resolved.workflowId) {
+      let resolved:
+        | { workflowId?: number; workflowName?: string; stageId?: number; stageName?: string }
+        | undefined;
+
+      try {
+        resolved = await resolveWorkflowStageByNameForTask(taskId, workflowName, stageName);
+      } catch (primaryError: any) {
+        logger.warn(`Task-scoped workflow/stage name resolution failed for task ${taskId}: ${primaryError.message}`);
+
+        const projectId = resolveWorkspaceProjectId(projectIdFallback);
+        if (!projectId) {
+          throw primaryError;
+        }
+
+        resolved = await resolveNamesFromProjectLookup(projectId, {
+          workflowId: preferredWorkflowId,
+          workflowName,
+          stageName
+        });
+
+        logger.info(
+          `Resolved workflow/stage by project lookup for task ${taskId} (project ${projectId}): ` +
+          `workflow='${resolved.workflowName ?? "n/a"}' (${resolved.workflowId ?? "n/a"}), ` +
+          `stage='${resolved.stageName ?? "n/a"}' (${resolved.stageId ?? "n/a"})`
+        );
+      }
+
+      if (resolved.workflowId !== undefined) {
         taskRequest.workflows.workflowId = resolved.workflowId;
       }
-      if (resolved.stageId) {
+      if (resolved.stageId !== undefined) {
         taskRequest.workflows.stageId = resolved.stageId;
       }
 

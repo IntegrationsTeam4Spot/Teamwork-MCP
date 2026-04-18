@@ -5,6 +5,7 @@ export * from './core/types.js';
 // Project-related exports
 import getProjects from './projects/getProjects.js';
 import getCurrentProject from './projects/getCurrentProject.js';
+import getProjectWorkflowStages from './projects/getProjectWorkflowStages.js';
 import createProject , { CreateProjectData } from './projects/createProject.js';
 
 // Task-related exports
@@ -48,7 +49,7 @@ import getTimezones from './core/getTimezones.js';
 import getUserTaskCompletion from './reporting/getUserTaskCompletion.js';
 
 // Re-export all functions
-export { getProjects, getCurrentProject, createProject, CreateProjectData };
+export { getProjects, getCurrentProject, getProjectWorkflowStages, createProject, CreateProjectData };
 export { getTasks, getTasksByProjectId, getTaskListsByProjectId, getTaskById, createTask, createSubTask, updateTask, deleteTask, uncompleteTask };
 export { createComment };
 export { getPeople, PeopleQueryParams, getPersonById, getProjectPeople, addPeopleToProject, AddPeopleToProjectPayload, deletePerson, updatePerson, getPeopleMetricsPerformance, getPeopleUtilization, getProjectPerson };
@@ -62,6 +63,7 @@ export default {
   // Projects
   getProjects,
   getCurrentProject,
+  getProjectWorkflowStages,
   createProject,
   
   // Tasks

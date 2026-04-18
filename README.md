@@ -27,6 +27,7 @@ The following tools are available through the MCP server:
 
 - `getProjects` - Get all projects from Teamwork
 - `getCurrentProject` - Gets details about the current project
+- `getProjectWorkflowStages` - Get workflow and stage names/IDs for a project (useful before updating task workflowStageId/stageId)
 - `createProject` - Create a new project in Teamwork
 
 ### Task Tools

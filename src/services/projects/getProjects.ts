@@ -13,7 +13,7 @@ export const getProjects = async (params?: ProjectQueryParams) => {
     const apiParams: ProjectQueryParams = { ...(params || {}) };
 
     if (!apiParams.include || apiParams.include.length === 0) {
-      apiParams.include = ['tags', 'projectCategories', 'users', 'projectOwners', 'createdBy', 'updatedBy'];
+      apiParams.include = ['tags', 'projectCategories', 'users', 'projectOwners', 'createdBy', 'updatedBy', 'workflows', 'stages', 'workflowStages'];
     }
     if (!apiParams['fields[projects]']) {
       apiParams['fields[projects]'] = ['id', 'name'];
@@ -25,7 +25,10 @@ export const getProjects = async (params?: ProjectQueryParams) => {
       apiParams['fields[workflows]'] = ['id', 'name', 'statusId'];
     }
     if (!apiParams['fields[stages]']) {
-      apiParams['fields[stages]'] = ['id', 'name', 'stage'];
+      apiParams['fields[stages]'] = ['id', 'name', 'stage', 'workflowId'];
+    }
+    if (!apiParams['fields[workflowStages]']) {
+      apiParams['fields[workflowStages]'] = ['id', 'name', 'stage', 'workflowId'];
     }
 
     try {
