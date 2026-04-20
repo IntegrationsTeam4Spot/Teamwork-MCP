@@ -14,7 +14,7 @@ import path from "path";
 // Tool definition
 export const updateTaskDefinition = {
   name: "updateTask",
-  description: "Update an existing task. Supports direct field updates and workflow-stage moves. For reliable stage moves, resolve IDs first with getWorkflows/getWorkflowStages/getWorkflowStageById, then pass workflowId + workflowStageId (or taskRequest.workflows.stageId). workflowName/stageName are best-effort fallbacks and can fail when names are ambiguous or missing context.",
+  description: "Update an existing task and/or move it to a workflow stage. Use this tool (not updateWorkflowStage) when changing which stage a TASK is in. For deterministic stage moves, provide workflowId + workflowStageId (top-level), or taskRequest.workflows.workflowId + stageId. Free-text workflowName/stageName are best-effort fallbacks. Response includes workflowVerification with requestedStageId and stageIdMatchesRequest.",
   inputSchema: {
     type: 'object',
     properties: {
@@ -28,15 +28,15 @@ export const updateTaskDefinition = {
       },
       workflowId: {
         type: 'integer',
-        description: 'Optional existing workflow ID shortcut. Mapped to taskRequest.workflows.workflowId. Preferred over workflowName for deterministic behavior.'
+        description: 'Preferred top-level shortcut for task workflow move target. Mapped to taskRequest.workflows.workflowId.'
       },
       workflowStageId: {
         type: 'integer',
-        description: 'Optional existing workflow stage ID shortcut. Mapped to taskRequest.workflows.stageId. Preferred for deterministic updates. Resolve with getWorkflowStages/getWorkflowStageById.'
+        description: 'Preferred top-level shortcut for task stage move target. Mapped to taskRequest.workflows.stageId. Resolve using getWorkflowStages/getWorkflowStageById.'
       },
       workflowPositionAfterTask: {
         type: 'integer',
-        description: 'Optional workflow position-after-task ID shortcut. Mapped to taskRequest.workflows.positionAfterTask.'
+        description: 'Optional top-level shortcut for workflow ordering. Mapped to taskRequest.workflows.positionAfterTask.'
       },
       workflowName: {
         type: 'string',
@@ -144,6 +144,9 @@ export const updateTaskDefinition = {
           task: {
             type: 'object',
             properties: {
+              allocationId: {
+                type: 'integer'
+              },
               assignees: {
                 type: 'object',
                 properties: {
@@ -234,6 +237,34 @@ export const updateTaskDefinition = {
                 required: [],
                 description: 'UserGroups are common lists for storing users, companies and teams ids together.'
               },
+              completeFollowers: {
+                type: 'object',
+                properties: {
+                  companyIds: {
+                    type: 'array',
+                    items: {
+                      type: 'integer'
+                    },
+                    description: 'NullableInt64Slice implements json.Unmarshaler to allow testing between a value that explicitly set to null or omitted.'
+                  },
+                  teamIds: {
+                    type: 'array',
+                    items: {
+                      type: 'integer'
+                    },
+                    description: 'NullableInt64Slice implements json.Unmarshaler to allow testing between a value that explicitly set to null or omitted.'
+                  },
+                  userIds: {
+                    type: 'array',
+                    items: {
+                      type: 'integer'
+                    },
+                    description: 'NullableInt64Slice implements json.Unmarshaler to allow testing between a value that explicitly set to null or omitted.'
+                  }
+                },
+                required: [],
+                description: 'UserGroups are common lists for storing users, companies, teams and jobRole ids together.'
+              },
               completedAt: {
                 type: 'string'
               },
@@ -291,8 +322,18 @@ export const updateTaskDefinition = {
                 type: 'string'
               },
               dueAt: {
-                type: 'string',
-                format: 'date',
+                anyOf: [
+                  {
+                    type: 'object'
+                  },
+                  {
+                    type: 'string',
+                    format: 'date'
+                  },
+                  {
+                    type: 'null'
+                  }
+                ],
                 description: 'NullableDate implements json.Unmarshaler to allow testing between a value that explicitly set to null or omitted. Date format \'2006-01-02\''
               },
               estimatedMinutes: {
@@ -332,20 +373,43 @@ export const updateTaskDefinition = {
               name: {
                 type: 'string'
               },
+              notify: {
+                type: 'boolean'
+              },
               originalDueDate: {
-                type: 'string',
-                format: 'date',
+                anyOf: [
+                  {
+                    type: 'object'
+                  },
+                  {
+                    type: 'string',
+                    format: 'date'
+                  },
+                  {
+                    type: 'null'
+                  }
+                ],
                 description: 'NullableDate implements json.Unmarshaler to allow testing between a value that explicitly set to null or omitted. Date format \'2006-01-02\''
               },
               parentTaskId: {
                 type: 'integer'
               },
               priority: {
-                type: 'string',
-                enum: [
-                  'low',
-                  'normal',
-                  'high'
+                anyOf: [
+                  {
+                    type: 'string',
+                    enum: [
+                      'low',
+                      'normal',
+                      'high'
+                    ]
+                  },
+                  {
+                    type: 'object'
+                  },
+                  {
+                    type: 'null'
+                  }
                 ],
                 description: 'NullableTaskPriority implements json.Unmarshaler to allow testing between a value that explicitly set to null or omitted.'
               },
@@ -353,6 +417,9 @@ export const updateTaskDefinition = {
                 type: 'boolean'
               },
               progress: {
+                type: 'integer'
+              },
+              projectId: {
                 type: 'integer'
               },
               reminders: {
@@ -418,8 +485,18 @@ export const updateTaskDefinition = {
                 description: 'RepeatOptions stores recurring information for the task.'
               },
               startAt: {
-                type: 'string',
-                format: 'date',
+                anyOf: [
+                  {
+                    type: 'object'
+                  },
+                  {
+                    type: 'string',
+                    format: 'date'
+                  },
+                  {
+                    type: 'null'
+                  }
+                ],
                 description: 'NullableDate implements json.Unmarshaler to allow testing between a value that explicitly set to null or omitted. Date format \'2006-01-02\''
               },
               status: {
@@ -518,6 +595,26 @@ export const updateTaskDefinition = {
             },
             required: [],
             description: 'Workflow placement details for the task. Use IDs from getWorkflows/getWorkflowStages for deterministic updates.'
+          },
+          workflowId: {
+            type: 'integer',
+            description: 'Legacy alias for taskRequest.workflows.workflowId (still supported).'
+          },
+          workflowStageId: {
+            type: 'integer',
+            description: 'Legacy alias for taskRequest.workflows.stageId (still supported).'
+          },
+          workflowPositionAfterTask: {
+            type: 'integer',
+            description: 'Legacy alias for taskRequest.workflows.positionAfterTask (still supported).'
+          },
+          stageId: {
+            type: 'integer',
+            description: 'Legacy alias for taskRequest.workflows.stageId (still supported).'
+          },
+          positionAfterTask: {
+            type: 'integer',
+            description: 'Legacy alias for taskRequest.workflows.positionAfterTask (still supported).'
           }
         },
         required: [],
@@ -778,6 +875,19 @@ async function resolveNamesFromProjectLookup(
   };
 }
 
+function extractWorkflowMoveRequest(taskRequest: TaskRequest): {
+  workflowId?: number;
+  stageId?: number;
+  positionAfterTask?: number;
+} {
+  const workflowsAny = (taskRequest as any)?.workflows ?? {};
+  return {
+    workflowId: parseOptionalInteger(workflowsAny.workflowId),
+    stageId: parseOptionalInteger(workflowsAny.stageId),
+    positionAfterTask: parseOptionalInteger(workflowsAny.positionAfterTask)
+  };
+}
+
 // Tool handler
 export async function handleUpdateTask(input: any) {
   logger.verbose("=== updateTask tool called ===");  
@@ -785,10 +895,17 @@ export async function handleUpdateTask(input: any) {
     
     const taskId = input.taskId;
     const taskRequest = (input.taskRequest ?? {}) as TaskRequest;
+    const taskRequestAny = taskRequest as any;
     const projectIdFallback = parseOptionalInteger(input.projectId);
     const workflowIdShortcut = parseOptionalInteger(input.workflowId);
     const workflowStageIdShortcut = parseOptionalInteger(input.workflowStageId);
     const workflowPositionAfterTaskShortcut = parseOptionalInteger(input.workflowPositionAfterTask);
+    const workflowIdTaskRequestAlias = parseOptionalInteger(taskRequestAny.workflowId);
+    const workflowStageIdTaskRequestAlias = parseOptionalInteger(taskRequestAny.workflowStageId);
+    const stageIdTaskRequestAlias = parseOptionalInteger(taskRequestAny.stageId);
+    const workflowPositionAfterTaskTaskRequestAlias =
+      parseOptionalInteger(taskRequestAny.workflowPositionAfterTask) ??
+      parseOptionalInteger(taskRequestAny.positionAfterTask);
     const workflowNameInput = typeof input.workflowName === "string" ? input.workflowName.trim() : undefined;
     const workflowIdFromWorkflowName = parseOptionalInteger(workflowNameInput);
     const workflowName = workflowIdFromWorkflowName !== undefined ? undefined : workflowNameInput;
@@ -817,6 +934,8 @@ export async function handleUpdateTask(input: any) {
       taskRequest.workflows.workflowId = effectiveWorkflowId;
     } else if (nestedWorkflowId !== undefined) {
       taskRequest.workflows.workflowId = nestedWorkflowId;
+    } else if (workflowIdTaskRequestAlias !== undefined) {
+      taskRequest.workflows.workflowId = workflowIdTaskRequestAlias;
     }
 
     if (workflowStageIdShortcut !== undefined) {
@@ -825,23 +944,44 @@ export async function handleUpdateTask(input: any) {
       taskRequest.workflows.stageId = nestedStageId;
     } else if (nestedWorkflowStageId !== undefined) {
       taskRequest.workflows.stageId = nestedWorkflowStageId;
+    } else if (workflowStageIdTaskRequestAlias !== undefined) {
+      taskRequest.workflows.stageId = workflowStageIdTaskRequestAlias;
+    } else if (stageIdTaskRequestAlias !== undefined) {
+      taskRequest.workflows.stageId = stageIdTaskRequestAlias;
     }
 
     if (workflowPositionAfterTaskShortcut !== undefined) {
       taskRequest.workflows.positionAfterTask = workflowPositionAfterTaskShortcut;
     } else if (nestedPositionAfterTask !== undefined) {
       taskRequest.workflows.positionAfterTask = nestedPositionAfterTask;
+    } else if (workflowPositionAfterTaskTaskRequestAlias !== undefined) {
+      taskRequest.workflows.positionAfterTask = workflowPositionAfterTaskTaskRequestAlias;
     }
 
     if ("workflowStageId" in workflowsAny) {
       delete workflowsAny.workflowStageId;
+    }
+    if ("workflowId" in taskRequestAny) {
+      delete taskRequestAny.workflowId;
+    }
+    if ("workflowStageId" in taskRequestAny) {
+      delete taskRequestAny.workflowStageId;
+    }
+    if ("workflowPositionAfterTask" in taskRequestAny) {
+      delete taskRequestAny.workflowPositionAfterTask;
+    }
+    if ("stageId" in taskRequestAny) {
+      delete taskRequestAny.stageId;
+    }
+    if ("positionAfterTask" in taskRequestAny) {
+      delete taskRequestAny.positionAfterTask;
     }
 
     if (Object.keys(taskRequest.workflows).length === 0) {
       delete (taskRequest as any).workflows;
     }
 
-    const hasTaskContent = !!taskRequest.task || !!taskRequest.workflows;
+    const hasTaskContent = Object.keys(taskRequest as any).length > 0;
     const hasNameBasedWorkflowInput = !!workflowName || !!stageName;
 
     if (!hasTaskContent && !hasNameBasedWorkflowInput) {
@@ -903,13 +1043,101 @@ export async function handleUpdateTask(input: any) {
       );
     }
 
-    // Call the service to update the task
-    const response = await teamworkService.updateTask(taskId.toString(), taskRequest);
-       
+    const workflowMove = extractWorkflowMoveRequest(taskRequest);
+    const hasWorkflowMove =
+      workflowMove.workflowId !== undefined &&
+      (workflowMove.stageId !== undefined || workflowMove.positionAfterTask !== undefined);
+
+    if (
+      workflowMove.workflowId === undefined &&
+      (workflowMove.stageId !== undefined || workflowMove.positionAfterTask !== undefined)
+    ) {
+      throw new Error(
+        "workflowId is required when updating workflow stage/position. " +
+        "Provide workflowId with workflowStageId/stageId and/or workflowPositionAfterTask."
+      );
+    }
+
+    const taskPatchPayload: TaskRequest = { ...taskRequest };
+    if (hasWorkflowMove) {
+      delete (taskPatchPayload as any).workflows;
+    }
+
+    const hasTaskPatchPayload = Object.keys(taskPatchPayload as any).length > 0;
+
+    let taskUpdateResponse: any = null;
+    if (hasTaskPatchPayload) {
+      taskUpdateResponse = await teamworkService.updateTask(taskId.toString(), taskPatchPayload);
+    }
+
+    let workflowUpdateResponse: any = null;
+    let workflowVerification: any = null;
+    if (hasWorkflowMove) {
+      workflowUpdateResponse = await teamworkService.updateTaskWorkflow(taskId.toString(), {
+        workflowId: workflowMove.workflowId!,
+        stageId: workflowMove.stageId,
+        positionAfterTask: workflowMove.positionAfterTask
+      });
+
+      // Best-effort verification snapshot so agents can see the actual current stage.
+      try {
+        const refreshedTaskResponse = await teamworkService.getTaskById(taskId.toString());
+        const refreshedTask = refreshedTaskResponse?.task ?? refreshedTaskResponse;
+        const workflowStages = Array.isArray(refreshedTask?.workflowStages)
+          ? refreshedTask.workflowStages
+          : [];
+        const matchedWorkflowStage =
+          workflowMove.workflowId !== undefined
+            ? workflowStages.find((entry: any) => parseOptionalInteger(entry?.workflowId) === workflowMove.workflowId)
+            : undefined;
+
+        workflowVerification = {
+          workflowStages,
+          matchedWorkflowStage: matchedWorkflowStage ?? null,
+          requestedStageId: workflowMove.stageId ?? null,
+          stageIdMatchesRequest:
+            workflowMove.stageId !== undefined
+              ? parseOptionalInteger(matchedWorkflowStage?.stageId) === workflowMove.stageId
+              : null
+        };
+        if (
+          workflowMove.stageId !== undefined &&
+          parseOptionalInteger(matchedWorkflowStage?.stageId) !== workflowMove.stageId
+        ) {
+          (workflowVerification as any).warning =
+            `Requested stageId ${workflowMove.stageId} but task is currently at stageId ` +
+            `${parseOptionalInteger(matchedWorkflowStage?.stageId) ?? "unknown"} in workflow ${workflowMove.workflowId}.`;
+        }
+      } catch (verificationError: any) {
+        workflowVerification = {
+          warning: `Workflow update verification lookup failed: ${verificationError?.message ?? "unknown error"}`
+        };
+      }
+    }
+
+    if (!hasTaskPatchPayload && !hasWorkflowMove) {
+      return {
+        content: [{
+          type: "text",
+          text: "Nothing to update after normalization. Provide task fields and/or workflow move fields."
+        }]
+      };
+    }
+
     return {
       content: [{
         type: "text",
-        text: JSON.stringify(response, null, 2)
+        text: JSON.stringify(
+          {
+            taskUpdated: hasTaskPatchPayload,
+            workflowUpdated: hasWorkflowMove,
+            taskUpdate: taskUpdateResponse,
+            workflowUpdate: workflowUpdateResponse,
+            workflowVerification
+          },
+          null,
+          2
+        )
       }]
     };
   } catch (error: any) {

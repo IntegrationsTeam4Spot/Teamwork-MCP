@@ -23,15 +23,10 @@ export async function updateTask(taskId: string, taskData: TaskRequest) {
     
     // Make the PATCH request to update the task
     const response = await apiClient.patch(url, taskData);
-    if (response.status === 200) {
-      if (response.data.task.name) {
-        return `Task '${response.data.task.name}' updated successfully`;
-      } else {
-        return `Task updated successfully`;        
-      }
-    } else {
-      throw new Error(response.data.message.status);
+    if (response.status !== 200) {
+      throw new Error(response.data?.message?.status || "Task update failed");
     }
+    return response.data;
   } catch (error: any) {
     logger.error(`Error updating task ${taskId}: ${error.message}`);
         

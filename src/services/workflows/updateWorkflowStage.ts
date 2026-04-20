@@ -14,8 +14,16 @@ export const updateWorkflowStage = async (
     );
     return response.data;
   } catch (error: any) {
-    logger.error(`Error updating workflow stage ${stageId} in workflow ${workflowId}: ${error.message}`);
-    throw new Error(`Failed to update workflow stage ${stageId} in workflow ${workflowId}: ${error.message}`);
+    const responsePayload = error?.response?.data;
+    const responseDetails = responsePayload
+      ? ` Response: ${JSON.stringify(responsePayload).slice(0, 1000)}`
+      : "";
+    logger.error(
+      `Error updating workflow stage ${stageId} in workflow ${workflowId}: ${error.message}${responseDetails}`
+    );
+    throw new Error(
+      `Failed to update workflow stage ${stageId} in workflow ${workflowId}: ${error.message}${responseDetails}`
+    );
   }
 };
 

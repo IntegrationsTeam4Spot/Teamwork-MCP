@@ -20,6 +20,7 @@ import getTaskById from './tasks/getTaskById.js';
 import createTask from './tasks/createTask.js';
 import createSubTask from './tasks/createSubTask.js';
 import updateTask from './tasks/updateTask.js';
+import updateTaskWorkflow from './tasks/updateTaskWorkflow.js';
 import deleteTask from './tasks/deleteTask.js';
 import uncompleteTask from './tasks/uncompleteTask.js';
 import getTaskComments from './tasks/getTaskComments.js';
@@ -64,7 +65,7 @@ export {
   getWorkflowStageById,
   updateWorkflowStage
 };
-export { getTasks, getTasksByProjectId, getTaskListsByProjectId, getTaskById, createTask, createSubTask, updateTask, deleteTask, uncompleteTask };
+export { getTasks, getTasksByProjectId, getTaskListsByProjectId, getTaskById, createTask, createSubTask, updateTask, updateTaskWorkflow, deleteTask, uncompleteTask };
 export { createComment };
 export { getPeople, PeopleQueryParams, getPersonById, getProjectPeople, addPeopleToProject, AddPeopleToProjectPayload, deletePerson, updatePerson, getPeopleMetricsPerformance, getPeopleUtilization, getProjectPerson };
 export { createCompany, updateCompany, deleteCompany, getCompanies, getCompanyById };
@@ -92,6 +93,7 @@ export default {
   createTask,
   createSubTask,
   updateTask,
+  updateTaskWorkflow,
   deleteTask,
   uncompleteTask,
   getTaskComments,

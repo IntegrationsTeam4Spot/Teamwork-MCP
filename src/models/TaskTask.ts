@@ -9,10 +9,12 @@ import { TaskRepeatOptions } from './TaskRepeatOptions.js';
  * Task contains all the information returned from a task.
  */
 export interface TaskTask {
+  allocationId?: number;
   assignees?: PayloadUserGroups;
   attachmentIds?: number[];
   changeFollowers?: PayloadUserGroups;
   commentFollowers?: PayloadUserGroups;
+  completeFollowers?: PayloadUserGroups;
   completedAt?: string;
   completedBy?: number;
   createdAt?: string;
@@ -26,11 +28,13 @@ export interface TaskTask {
   grantAccessTo?: PayloadUserGroups;
   hasDeskTickets?: boolean;
   name?: string;
+  notify?: boolean;
   originalDueDate?: PayloadNullableDate;
   parentTaskId?: number;
   priority?: PayloadNullableTaskPriority;
   private?: boolean;
   progress?: number;
+  projectId?: number;
   reminders?: TaskReminder[];
   repeatOptions?: TaskRepeatOptions;
   startAt?: PayloadNullableDate;

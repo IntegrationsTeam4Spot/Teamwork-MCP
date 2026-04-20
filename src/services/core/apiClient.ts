@@ -19,6 +19,14 @@ logger.info(`Auth string length: ${authString.length}, Base64 auth length: ${bas
 let teamworkApiV3: AxiosInstance | null = null;
 let teamworkApiV1: AxiosInstance | null = null;
 
+const safeJsonStringify = (value: any): string => {
+  try {
+    return JSON.stringify(value);
+  } catch {
+    return '[unserializable]';
+  }
+};
+
 /**
  * Constructs the Teamwork API URL for a specific version
  * @param version API version (v1, v3, etc.)
@@ -83,16 +91,16 @@ export const createApiClientForVersion = (version: string = 'v3'): AxiosInstance
       if (safeHeaders.Authorization) {
         safeHeaders.Authorization = 'Basic ***** (redacted)';
       }
-      logger.info(`Request headers: ${JSON.stringify(safeHeaders)}`);
+      logger.info(`Request headers: ${safeJsonStringify(safeHeaders)}`);
       
       // Log request body for POST/PUT/PATCH requests
       if (request.data && ['post', 'put', 'patch'].includes(request.method || '')) {
-        logger.info(`Request body: ${JSON.stringify(request.data)}`);
+        logger.info(`Request body: ${safeJsonStringify(request.data)}`);
       }
       
       // Log query parameters if present
       if (request.params) {
-        logger.info(`Request params: ${JSON.stringify(request.params)}`);
+        logger.info(`Request params: ${safeJsonStringify(request.params)}`);
       }
       
       return request;
@@ -109,7 +117,7 @@ export const createApiClientForVersion = (version: string = 'v3'): AxiosInstance
       logger.info(`Response status: ${response.status} ${response.statusText}`);
       
       // Log response headers
-      logger.verbose(`Response headers: ${JSON.stringify(response.headers)}`);
+      logger.verbose(`Response headers: ${safeJsonStringify(response.headers)}`);
       
       // Log response data preview
       const dataType = typeof response.data;
@@ -120,13 +128,13 @@ export const createApiClientForVersion = (version: string = 'v3'): AxiosInstance
           logger.info(`Response data: Array with ${response.data.length} items`);
           if (response.data.length > 0) {
             logger.info(`6️⃣`);
-            logger.info(`First item sample: ${JSON.stringify(response.data[0]).substring(0, 200)}...`);
+            logger.info(`First item sample: ${safeJsonStringify(response.data[0]).substring(0, 200)}...`);
           }
         } else {
           logger.info(`7️⃣`);
           const keys = Object.keys(response.data);
           logger.info(`Response data: Object with keys [${keys.join(', ')}]`);
-          logger.info(`Data preview: ${JSON.stringify(response.data).substring(0, 200)}...`);
+          logger.info(`Data preview: ${safeJsonStringify(response.data).substring(0, 200)}...`);
         }
       } else {
         logger.info(`Response data type: ${dataType}`);
@@ -137,21 +145,25 @@ export const createApiClientForVersion = (version: string = 'v3'): AxiosInstance
       logger.info(`8️⃣`);
       if (error.response) {
         logger.error(`Response error: ${error.response.status} - ${error.response.statusText}`);
-        logger.error(`Response headers: ${JSON.stringify(error.response.headers)}`);
+        logger.error(`Response headers: ${safeJsonStringify(error.response.headers)}`);
         
         // Log response data if available
         if (error.response.data) {
-          logger.error(`Response data: ${JSON.stringify(error.response.data)}`);
+          logger.error(`Response data: ${safeJsonStringify(error.response.data)}`);
         }
       } else if (error.request) {
         logger.error(`Request error (no response received): ${error.message}`);
-        logger.error(`Request details: ${JSON.stringify(error.request)}`);
+        logger.error(`Request details: ${safeJsonStringify({
+          method: error.config?.method,
+          url: error.config?.url,
+          baseURL: error.config?.baseURL
+        })}`);
       } else {
         logger.error(`Error setting up request: ${error.message}`);
       }
       
       if (error.config) {
-        logger.error(`Request config: ${JSON.stringify({
+        logger.error(`Request config: ${safeJsonStringify({
           url: error.config.url,
           method: error.config.method,
           baseURL: error.config.baseURL,
