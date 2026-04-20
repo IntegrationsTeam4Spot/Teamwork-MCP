@@ -10,7 +10,7 @@ import { createErrorResponse } from "../../utils/errorHandler.js";
 
 export const createTaskDefinition = {
   name: "createTask",
-  description: "Creates a task. Create a new task in the provided task list. ",
+  description: "Creates a task in the provided task list. Optional workflow placement can be set via taskRequest.workflows.positionAfterTask, taskRequest.workflows.stageId, and taskRequest.workflows.workflowId.",
   inputSchema: {
   type: "object",
   properties: {

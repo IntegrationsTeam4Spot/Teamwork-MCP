@@ -6,8 +6,15 @@
 // Projects
 import { getProjectsDefinition as getProjects, handleGetProjects } from './projects/getProjects.js';
 import { getCurrentProjectDefinition as getCurrentProject, handleGetCurrentProject } from './projects/getCurrentProject.js';
-import { getProjectWorkflowStagesDefinition as getProjectWorkflowStages, handleGetProjectWorkflowStages } from './projects/getProjectWorkflowStages.js';
-import { getWorkflowStagesDefinition as getWorkflowStages, handleGetWorkflowStages } from './projects/getWorkflowStages.js';
+import {
+  getWorkflowStagesDefinition as getWorkflowStages,
+  getWorkflowStagesByWorkflowIdDefinition as getWorkflowStagesByWorkflowId,
+  handleGetWorkflowStages,
+  handleGetWorkflowStagesByWorkflowId
+} from './projects/getWorkflowStages.js';
+import { getWorkflowsDefinition as getWorkflows, handleGetWorkflows } from './projects/getWorkflows.js';
+import { getWorkflowStageByIdDefinition as getWorkflowStageById, handleGetWorkflowStageById } from './projects/getWorkflowStageById.js';
+import { updateWorkflowStageDefinition as updateWorkflowStage, handleUpdateWorkflowStage } from './projects/updateWorkflowStage.js';
 import { createProjectDefinition as createProject, handleCreateProject } from './projects/createProject.js';
 
 // Tasks
@@ -68,8 +75,11 @@ interface ToolPair {
 const toolPairs: ToolPair[] = [
   { definition: getProjects, handler: handleGetProjects },
   { definition: getCurrentProject, handler: handleGetCurrentProject },
-  { definition: getProjectWorkflowStages, handler: handleGetProjectWorkflowStages },
+  { definition: getWorkflows, handler: handleGetWorkflows },
   { definition: getWorkflowStages, handler: handleGetWorkflowStages },
+  { definition: getWorkflowStagesByWorkflowId, handler: handleGetWorkflowStagesByWorkflowId },
+  { definition: getWorkflowStageById, handler: handleGetWorkflowStageById },
+  { definition: updateWorkflowStage, handler: handleUpdateWorkflowStage },
   { definition: createProject, handler: handleCreateProject },
   { definition: getTasks, handler: handleGetTasks },
   { definition: getTasksByProjectId, handler: handleGetTasksByProjectId },
@@ -119,8 +129,11 @@ export const toolHandlersMap: Record<string, Function> = toolPairs.reduce((map, 
 // Export all tool handlers
 export { handleGetProjects } from './projects/getProjects.js';
 export { handleGetCurrentProject } from './projects/getCurrentProject.js';
-export { handleGetProjectWorkflowStages } from './projects/getProjectWorkflowStages.js';
+export { handleGetWorkflows } from './projects/getWorkflows.js';
 export { handleGetWorkflowStages } from './projects/getWorkflowStages.js';
+export { handleGetWorkflowStagesByWorkflowId } from './projects/getWorkflowStages.js';
+export { handleGetWorkflowStageById } from './projects/getWorkflowStageById.js';
+export { handleUpdateWorkflowStage } from './projects/updateWorkflowStage.js';
 export { handleCreateProject } from './projects/createProject.js';
 export { handleGetTasks } from './tasks/getTasks.js';
 export { handleGetTasksByProjectId } from './tasks/getTasksByProjectId.js';

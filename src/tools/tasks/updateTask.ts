@@ -14,7 +14,7 @@ import path from "path";
 // Tool definition
 export const updateTaskDefinition = {
   name: "updateTask",
-  description: "Update an existing task. Supports direct field updates and workflow-stage moves. For deterministic stage moves, resolve IDs first with getWorkflowStages/getProjectWorkflowStages, then pass workflowStageId/stageId.",
+  description: "Update an existing task. Supports direct field updates and workflow-stage moves. For reliable stage moves, resolve IDs first with getWorkflows/getWorkflowStages/getWorkflowStageById, then pass workflowId + workflowStageId (or taskRequest.workflows.stageId). workflowName/stageName are best-effort fallbacks and can fail when names are ambiguous or missing context.",
   inputSchema: {
     type: 'object',
     properties: {
@@ -28,19 +28,23 @@ export const updateTaskDefinition = {
       },
       workflowId: {
         type: 'integer',
-        description: 'Optional existing workflow ID shortcut. Mapped to taskRequest.workflows.workflowId. Prefer this over workflowName when possible.'
+        description: 'Optional existing workflow ID shortcut. Mapped to taskRequest.workflows.workflowId. Preferred over workflowName for deterministic behavior.'
       },
       workflowStageId: {
         type: 'integer',
-        description: 'Optional existing workflow stage ID shortcut. Mapped to taskRequest.workflows.stageId. Preferred for deterministic updates. You can find this with getWorkflowStages.'
+        description: 'Optional existing workflow stage ID shortcut. Mapped to taskRequest.workflows.stageId. Preferred for deterministic updates. Resolve with getWorkflowStages/getWorkflowStageById.'
+      },
+      workflowPositionAfterTask: {
+        type: 'integer',
+        description: 'Optional workflow position-after-task ID shortcut. Mapped to taskRequest.workflows.positionAfterTask.'
       },
       workflowName: {
         type: 'string',
-        description: 'Optional existing workflow name. Tool resolves this to workflowId before update. If a numeric string is provided (e.g. "2205"), it is treated as workflowId.'
+        description: 'Optional existing workflow name (best-effort fallback). Tool resolves this to workflowId before update. Prefer workflowId to avoid ambiguity. If a numeric string is provided (e.g. "2205"), it is treated as workflowId.'
       },
       stageName: {
         type: 'string',
-        description: 'Optional existing stage name/label. Tool resolves this to stageId before update, using closest match fallback when needed.'
+        description: 'Optional existing stage name/label (best-effort fallback). Tool resolves this to stageId before update and may fail if ambiguous. Prefer workflowStageId/stageId from getWorkflowStages.'
       },
       taskRequest: {
         type: 'object',
@@ -496,21 +500,24 @@ export const updateTaskDefinition = {
             type: 'object',
             properties: {
               positionAfterTask: {
-                type: 'integer'
+                type: 'integer',
+                description: 'Existing task ID used to place this task after another task inside a workflow lane.'
               },
               stageId: {
-                type: 'integer'
+                type: 'integer',
+                description: 'Existing workflow stage ID. Preferred over free-text stageName.'
               },
               workflowStageId: {
                 type: 'integer',
                 description: 'Alias of stageId; will be normalized to stageId before update'
               },
               workflowId: {
-                type: 'integer'
+                type: 'integer',
+                description: 'Existing workflow ID. Preferred over free-text workflowName.'
               }
             },
             required: [],
-            description: 'Workflows stores information about where the task lives in the workflow'
+            description: 'Workflow placement details for the task. Use IDs from getWorkflows/getWorkflowStages for deterministic updates.'
           }
         },
         required: [],
@@ -781,6 +788,7 @@ export async function handleUpdateTask(input: any) {
     const projectIdFallback = parseOptionalInteger(input.projectId);
     const workflowIdShortcut = parseOptionalInteger(input.workflowId);
     const workflowStageIdShortcut = parseOptionalInteger(input.workflowStageId);
+    const workflowPositionAfterTaskShortcut = parseOptionalInteger(input.workflowPositionAfterTask);
     const workflowNameInput = typeof input.workflowName === "string" ? input.workflowName.trim() : undefined;
     const workflowIdFromWorkflowName = parseOptionalInteger(workflowNameInput);
     const workflowName = workflowIdFromWorkflowName !== undefined ? undefined : workflowNameInput;
@@ -801,6 +809,7 @@ export async function handleUpdateTask(input: any) {
     const nestedWorkflowStageId = parseOptionalInteger(workflowsAny.workflowStageId);
     const nestedStageId = parseOptionalInteger(workflowsAny.stageId);
     const nestedWorkflowId = parseOptionalInteger(workflowsAny.workflowId);
+    const nestedPositionAfterTask = parseOptionalInteger(workflowsAny.positionAfterTask);
 
     const effectiveWorkflowId = workflowIdShortcut ?? workflowIdFromWorkflowName;
 
@@ -816,6 +825,12 @@ export async function handleUpdateTask(input: any) {
       taskRequest.workflows.stageId = nestedStageId;
     } else if (nestedWorkflowStageId !== undefined) {
       taskRequest.workflows.stageId = nestedWorkflowStageId;
+    }
+
+    if (workflowPositionAfterTaskShortcut !== undefined) {
+      taskRequest.workflows.positionAfterTask = workflowPositionAfterTaskShortcut;
+    } else if (nestedPositionAfterTask !== undefined) {
+      taskRequest.workflows.positionAfterTask = nestedPositionAfterTask;
     }
 
     if ("workflowStageId" in workflowsAny) {

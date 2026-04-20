@@ -7,6 +7,10 @@ import getProjects from './projects/getProjects.js';
 import getCurrentProject from './projects/getCurrentProject.js';
 import getProjectWorkflowStages from './projects/getProjectWorkflowStages.js';
 import createProject , { CreateProjectData } from './projects/createProject.js';
+import getWorkflows from './workflows/getWorkflows.js';
+import getWorkflowStagesByWorkflowId from './workflows/getWorkflowStagesByWorkflowId.js';
+import getWorkflowStageById from './workflows/getWorkflowStageById.js';
+import updateWorkflowStage from './workflows/updateWorkflowStage.js';
 
 // Task-related exports
 import getTasks from './tasks/getTasks.js';
@@ -49,7 +53,17 @@ import getTimezones from './core/getTimezones.js';
 import getUserTaskCompletion from './reporting/getUserTaskCompletion.js';
 
 // Re-export all functions
-export { getProjects, getCurrentProject, getProjectWorkflowStages, createProject, CreateProjectData };
+export {
+  getProjects,
+  getCurrentProject,
+  getProjectWorkflowStages,
+  createProject,
+  CreateProjectData,
+  getWorkflows,
+  getWorkflowStagesByWorkflowId,
+  getWorkflowStageById,
+  updateWorkflowStage
+};
 export { getTasks, getTasksByProjectId, getTaskListsByProjectId, getTaskById, createTask, createSubTask, updateTask, deleteTask, uncompleteTask };
 export { createComment };
 export { getPeople, PeopleQueryParams, getPersonById, getProjectPeople, addPeopleToProject, AddPeopleToProjectPayload, deletePerson, updatePerson, getPeopleMetricsPerformance, getPeopleUtilization, getProjectPerson };
@@ -65,6 +79,10 @@ export default {
   getCurrentProject,
   getProjectWorkflowStages,
   createProject,
+  getWorkflows,
+  getWorkflowStagesByWorkflowId,
+  getWorkflowStageById,
+  updateWorkflowStage,
   
   // Tasks
   getTasks,

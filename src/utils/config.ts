@@ -81,13 +81,27 @@ export const loadConfig = (args?: string[]) => {
         }
       });
 
-  // Try to load environment variables from .env file if they're not already set
+  // Try to load environment variables from .env files if they're not already set
   if (!process.env.TEAMWORK_DOMAIN || !process.env.TEAMWORK_USERNAME || !process.env.TEAMWORK_PASSWORD) {
-    try {
-      dotenv.config({ path: path.resolve(rootDir, '.env') });
-      logger.info('Attempted to load environment variables from .env file');
-    } catch (error) {
-      logger.warn('Failed to load .env file, will use environment variables or command line arguments');
+    const envPaths = [
+      path.resolve(rootDir, '.env'),
+      path.resolve(process.cwd(), '.env'),
+      path.resolve(rootDir, 'build', '.env')
+    ];
+
+    for (const envPath of envPaths) {
+      try {
+        if (fs.existsSync(envPath)) {
+          dotenv.config({ path: envPath });
+          logger.info(`Attempted to load environment variables from ${envPath}`);
+
+          if (process.env.TEAMWORK_DOMAIN && process.env.TEAMWORK_USERNAME && process.env.TEAMWORK_PASSWORD) {
+            break;
+          }
+        }
+      } catch (error) {
+        logger.warn(`Failed to load env file at ${envPath}`);
+      }
     }
   }
 
@@ -247,7 +261,7 @@ export default loadConfig();
 
 // Define a mapping of group names to tool names
 const toolGroups: Record<string, string[]> = {
-  'Projects': ['getProjects', 'getCurrentProject', 'getProjectWorkflowStages', 'getWorkflowStages', 'createProject'],
+  'Projects': ['getProjects', 'getCurrentProject', 'getWorkflows', 'getWorkflowStages', 'getWorkflowStagesByWorkflowId', 'getWorkflowStageById', 'updateWorkflowStage', 'createProject'],
   'Tasks': ['getTasks', 'getTasksByProjectId', 'getTaskListsByProjectId', 'getTaskById', 'createTask', 'createSubTask', 'updateTask', 'deleteTask', 'uncompleteTask', 'getTasksMetricsComplete', 'getTasksMetricsLate', 'getTaskSubtasks', 'getTaskComments'],
   'People': ['getPeople', 'getPersonById', 'getProjectPeople', 'addPeopleToProject', 'deletePerson', 'getProjectsPeopleMetricsPerformance', 'getProjectsPeopleUtilization', 'getProjectPerson'],
   'Reporting': ['getProjectsReportingUserTaskCompletion', 'getProjectsReportingUtilization'],

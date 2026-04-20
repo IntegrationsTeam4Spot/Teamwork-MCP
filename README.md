@@ -27,8 +27,11 @@ The following tools are available through the MCP server:
 
 - `getProjects` - Get all projects from Teamwork
 - `getCurrentProject` - Gets details about the current project
-- `getProjectWorkflowStages` - Get workflow and stage names/IDs for a project (useful before updating task workflowStageId/stageId)
-- `getWorkflowStages` - Get stage names/IDs for a specific workflow (or all workflows) in a project
+- `getWorkflows` - Get workflows (use returned workflow IDs for deterministic `updateTask` stage moves)
+- `getWorkflowStages` - Get all stages for a specific workflow (use returned stage IDs for deterministic `updateTask` stage moves)
+- `getWorkflowStagesByWorkflowId` - Alias of `getWorkflowStages` (same endpoint/behavior)
+- `getWorkflowStageById` - Get one specific stage by workflow ID and stage ID
+- `updateWorkflowStage` - Update workflow stage metadata (name/label) using Teamwork workflow stage endpoint
 - `createProject` - Create a new project in Teamwork
 
 ### Task Tools
@@ -40,7 +43,7 @@ The following tools are available through the MCP server:
 - `getTaskById` - Get a specific task by ID from Teamwork
 - `createTask` - Create a new task in Teamwork
 - `createSubTask` - Create a new subtask under a parent task in Teamwork
-- `updateTask` - Update an existing task in Teamwork
+- `updateTask` - Update an existing task in Teamwork (prefer `workflowId` + `workflowStageId` over free-text names)
 - `deleteTask` - Delete a task from Teamwork
 - `uncompleteTask` - Mark a completed task as incomplete and optionally reset progress to 0
 - `getTasksMetricsComplete` - Get the total count of completed tasks in Teamwork

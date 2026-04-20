@@ -167,6 +167,24 @@ function extractWorkflowStage(task: any): { workflowId?: number; stageId?: numbe
   return { workflowId, stageId };
 }
 
+function extractWorkflowPositionAfterTask(task: any): number | undefined {
+  const direct =
+    toId(task?.workflows?.positionAfterTask) ??
+    toId(task?.positionAfterTask) ??
+    toId(task?.positionAfterTaskId);
+
+  if (direct !== undefined) {
+    return direct;
+  }
+
+  if (Array.isArray(task?.workflowStages) && task.workflowStages.length > 0) {
+    const firstStage = task.workflowStages[0];
+    return toId(firstStage?.positionAfterTask) ?? toId(firstStage?.positionAfterTaskId);
+  }
+
+  return undefined;
+}
+
 function tasklistIdFromTask(task: any): number | undefined {
   return toId(task?.tasklistId) ?? toId(task?.tasklist);
 }
@@ -568,6 +586,7 @@ export async function enrichTaskLookupValues(payload: any): Promise<any> {
     );
 
     let { workflowId, stageId } = extractWorkflowStage(task);
+    const positionAfterTask = extractWorkflowPositionAfterTask(task);
 
     let stage = getById(stagesById, stageId);
     if (!stage && projectLookup) {
@@ -590,15 +609,37 @@ export async function enrichTaskLookupValues(payload: any): Promise<any> {
         null,
       tasklistName: typeof tasklist?.name === "string" ? tasklist.name : null,
       tagNames,
+      workflowId: workflowId ?? null,
+      stageId: stageId ?? null,
+      positionAfterTask: positionAfterTask ?? null,
       workflowName: typeof workflow?.name === "string" ? workflow.name : null,
       stageName: stageDisplayName(stage) ?? null
     };
+
+    const existingWorkflows = asRecord((task as any).workflows);
+    const normalizedWorkflows: RecordMap = { ...existingWorkflows };
+    if (positionAfterTask !== undefined) {
+      normalizedWorkflows.positionAfterTask = positionAfterTask;
+    }
+    if (workflowId !== undefined) {
+      normalizedWorkflows.workflowId = workflowId;
+    }
+    if (stageId !== undefined) {
+      normalizedWorkflows.stageId = stageId;
+    }
+
+    if (Object.keys(normalizedWorkflows).length > 0) {
+      (task as any).workflows = normalizedWorkflows;
+    }
 
     (task as any).lookup = lookup;
     (task as any).projectName = lookup.projectName;
     (task as any).tasklistName = lookup.tasklistName;
     (task as any).taskListName = lookup.tasklistName;
     (task as any).tagNames = lookup.tagNames;
+    (task as any).workflowId = lookup.workflowId;
+    (task as any).stageId = lookup.stageId;
+    (task as any).workflowStageId = lookup.stageId;
     (task as any).workflowName = lookup.workflowName;
     (task as any).stageName = lookup.stageName;
     (task as any).stageLabel = lookup.stageName;
