@@ -262,7 +262,7 @@ export default loadConfig();
 // Define a mapping of group names to tool names
 const toolGroups: Record<string, string[]> = {
   'Projects': ['getProjects', 'getCurrentProject', 'getWorkflows', 'getWorkflowStages', 'getWorkflowStagesByWorkflowId', 'getWorkflowStageById', 'updateWorkflowStage', 'createProject'],
-  'Tasks': ['getTasks', 'getTasksByProjectId', 'getTaskListsByProjectId', 'getTaskById', 'createTask', 'createSubTask', 'updateTask', 'deleteTask', 'uncompleteTask', 'getTasksMetricsComplete', 'getTasksMetricsLate', 'getTaskSubtasks', 'getTaskComments'],
+  'Tasks': ['getTasks', 'getTasksByProjectId', 'getTaskListsByProjectId', 'getTaskById', 'createTask', 'createSubTask', 'updateTask', 'deleteTask', 'uncompleteTask', 'getTasksMetricsComplete', 'getTasksMetricsLate', 'getTaskSubtasks', 'getTaskComments', 'getTasksNeedingReply'],
   'People': ['getPeople', 'getPersonById', 'getProjectPeople', 'addPeopleToProject', 'deletePerson', 'getProjectsPeopleMetricsPerformance', 'getProjectsPeopleUtilization', 'getProjectPerson'],
   'Reporting': ['getProjectsReportingUserTaskCompletion', 'getProjectsReportingUtilization'],
   'Time': ['getTime', 'getProjectsAllocationsTime', 'getTimezones'],

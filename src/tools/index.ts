@@ -32,6 +32,7 @@ import { getTasksMetricsCompleteDefinition as getTasksMetricsComplete, handleGet
 import { getTasksMetricsLateDefinition as getTasksMetricsLate, handleGetTasksMetricsLate } from './tasks/getTasksMetricsLate.js';
 import { getTaskSubtasksDefinition as getTaskSubtasks, handleGetTaskSubtasks } from './tasks/getTaskSubtasks.js';
 import { getTaskCommentsDefinition as getTaskComments, handleGetTaskComments } from './tasks/getTaskComments.js';
+import { getTasksNeedingReplyDefinition as getTasksNeedingReply, handleGetTasksNeedingReply } from './tasks/getTasksNeedingReply.js';
 
 // Comments
 import { createCommentDefinition as createComment, handleCreateComment } from './comments/createComment.js';
@@ -95,6 +96,7 @@ const toolPairs: ToolPair[] = [
   { definition: getTasksMetricsLate, handler: handleGetTasksMetricsLate },
   { definition: getTaskSubtasks, handler: handleGetTaskSubtasks },
   { definition: getTaskComments, handler: handleGetTaskComments },
+  { definition: getTasksNeedingReply, handler: handleGetTasksNeedingReply },
   { definition: createComment, handler: handleCreateComment },
   { definition: getPeople, handler: handleGetPeople },
   { definition: getPersonById, handler: handleGetPersonById },
@@ -149,6 +151,7 @@ export { handleGetTasksMetricsComplete } from './tasks/getTasksMetricsComplete.j
 export { handleGetTasksMetricsLate } from './tasks/getTasksMetricsLate.js';
 export { handleGetTaskSubtasks } from './tasks/getTaskSubtasks.js';
 export { handleGetTaskComments } from './tasks/getTaskComments.js';
+export { handleGetTasksNeedingReply } from './tasks/getTasksNeedingReply.js';
 export { handleCreateComment } from './comments/createComment.js';
 export { handleGetPeople } from './people/getPeople.js';
 export { handleGetPersonById } from './people/getPersonById.js';

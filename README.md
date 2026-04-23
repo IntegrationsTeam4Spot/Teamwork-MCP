@@ -25,7 +25,7 @@ The following tools are available through the MCP server:
 
 ### Project Tools
 
-- `getProjects` - Get all projects from Teamwork
+- `getProjects` - Get projects (supports optional `status` filter) and returns simplified `id`, `name`, `status` rows
 - `getCurrentProject` - Gets details about the current project
 - `getWorkflows` - Get workflows (use returned workflow IDs for deterministic `updateTask` stage moves)
 - `getWorkflowStages` - Get all stages for a specific workflow (use returned stage IDs for deterministic `updateTask` stage moves)
@@ -50,6 +50,7 @@ The following tools are available through the MCP server:
 - `getTasksMetricsLate` - Get the total count of late tasks in Teamwork
 - `getTaskSubtasks` - Get all subtasks for a specific task in Teamwork
 - `getTaskComments` - Get comments for a specific task from Teamwork
+- `getTasksNeedingReply` - Get tasks whose latest comment is not by a specified user (daily check-in helper)
 
 ### Comment Tools
 

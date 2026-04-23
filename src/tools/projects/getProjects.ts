@@ -10,10 +10,19 @@ import { createErrorResponse } from "../../utils/errorHandler.js";
 // Tool definition
 export const getProjectsDefinition = {
   name: "getProjects",
-  description: "Get all projects from Teamwork",
+  description: "Get projects from Teamwork via GET /projects.json. Optional status filter supported. Returns simplified project rows with id, name, and status.",
   inputSchema: {
     type: "object",
     properties: {
+      status: {
+        type: "string",
+        enum: ["active", "current", "late", "upcoming", "completed", "deleted"],
+        description: "Optional convenience filter mapped to Teamwork projectStatuses."
+      },
+      includeRaw: {
+        type: "boolean",
+        description: "Optional: include the raw API response alongside simplified output."
+      },
       // String parameters
       updatedAfter: {
         type: "string",
@@ -126,7 +135,7 @@ export const getProjectsDefinition = {
       },
       includeProjectStatus: {
         type: "boolean",
-        description: "Include project status"
+        description: "Include project status details when available."
       },
       includeProjectHealth: {
         type: "boolean",
@@ -194,14 +203,75 @@ export const getProjectsDefinition = {
   }
 };
 
+function normalizeStatus(value: any): string | null {
+  if (typeof value !== "string") {
+    return null;
+  }
+  const normalized = value.trim().toLowerCase();
+  return normalized.length > 0 ? normalized : null;
+}
+
+function extractProjectsArray(payload: any): any[] {
+  if (Array.isArray(payload)) {
+    return payload;
+  }
+  if (Array.isArray(payload?.projects)) {
+    return payload.projects;
+  }
+  if (Array.isArray(payload?.data)) {
+    return payload.data;
+  }
+  return [];
+}
+
+function statusFromProject(project: any): string {
+  const directStatus =
+    normalizeStatus(project?.status) ??
+    normalizeStatus(project?.projectStatus) ??
+    normalizeStatus(project?.statusName);
+  if (directStatus) {
+    return directStatus;
+  }
+
+  const statusId =
+    project?.statusId ??
+    project?.projectStatusId ??
+    project?.projectStatus?.id ??
+    project?.status?.id;
+  if (statusId !== undefined && statusId !== null) {
+    return String(statusId);
+  }
+
+  if (project?.isArchived === true) {
+    return "archived";
+  }
+  if (project?.completed === true || project?.isCompleted === true) {
+    return "completed";
+  }
+  return "unknown";
+}
+
 // Tool handler
 export async function handleGetProjects(input: any) {
   logger.info('=== getProjects tool called ===');
   logger.info(`Query parameters: ${JSON.stringify(input || {})}`);
   
   try {
+    const apiInput: Record<string, any> = { ...(input || {}) };
+    const statusFilter = normalizeStatus(apiInput.status);
+    const includeRaw = Boolean(apiInput.includeRaw);
+    delete apiInput.status;
+    delete apiInput.includeRaw;
+
+    if (statusFilter && !apiInput.projectStatuses) {
+      apiInput.projectStatuses = [statusFilter];
+    }
+    if (apiInput.includeProjectStatus === undefined) {
+      apiInput.includeProjectStatus = true;
+    }
+
     logger.info('Calling teamworkService.getProjects()');
-    const projects = await teamworkService.getProjects(input);
+    const projects = await teamworkService.getProjects(apiInput);
     
     // Debug the response
     logger.info(`Projects response type: ${typeof projects}`);
@@ -243,25 +313,32 @@ export async function handleGetProjects(input: any) {
       logger.info(`Projects response is not an array or object: ${JSON.stringify(projects).substring(0, 200)}...`);
     }
     
-    try {
-      const jsonString = JSON.stringify(projects, null, 2);
-      logger.info(`Successfully stringified projects response`);
-      logger.info('=== getProjects tool completed successfully ===');
+    const projectRows = extractProjectsArray(projects).map((project: any) => {
+      const derivedStatus = statusFromProject(project);
       return {
-        content: [{
-          type: "text",
-          text: jsonString
-        }]
+        id: project?.id ?? null,
+        name: project?.name ?? null,
+        status: derivedStatus === "unknown" && statusFilter ? statusFilter : derivedStatus
       };
-    } catch (jsonError: any) {
-      logger.error(`JSON stringify error: ${jsonError.message}`);
-      return {
-        content: [{
-          type: "text",
-          text: `Error converting response to JSON: ${jsonError.message}`
-        }]
-      };
+    });
+
+    const payload: Record<string, any> = {
+      count: projectRows.length,
+      projects: projectRows
+    };
+    if (includeRaw) {
+      payload.raw = projects;
     }
+
+    const jsonString = JSON.stringify(payload, null, 2);
+    logger.info(`Successfully stringified simplified projects response`);
+    logger.info('=== getProjects tool completed successfully ===');
+    return {
+      content: [{
+        type: "text",
+        text: jsonString
+      }]
+    };
   } catch (error: any) {
     return createErrorResponse(error, 'Retrieving projects');
   }

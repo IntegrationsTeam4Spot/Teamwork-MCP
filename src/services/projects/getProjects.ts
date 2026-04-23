@@ -16,7 +16,7 @@ export const getProjects = async (params?: ProjectQueryParams) => {
       apiParams.include = ['tags', 'projectCategories', 'users', 'projectOwners', 'createdBy', 'updatedBy', 'workflows', 'stages', 'workflowStages'];
     }
     if (!apiParams['fields[projects]']) {
-      apiParams['fields[projects]'] = ['id', 'name'];
+      apiParams['fields[projects]'] = ['id', 'name', 'status', 'statusId'];
     }
     if (!apiParams['fields[tags]']) {
       apiParams['fields[tags]'] = ['id', 'name', 'color', 'count'];
@@ -34,7 +34,15 @@ export const getProjects = async (params?: ProjectQueryParams) => {
     try {
       // Try with v3 API first
       const api = ensureApiClient();
-      const response = await api.get('/projects.json', { params: apiParams });
+      let response;
+      try {
+        response = await api.get('/projects.json', { params: apiParams });
+      } catch (primaryError: any) {
+        // Some Teamwork installations are strict about fields[projects]. Retry with minimal fields.
+        const retryParams = { ...apiParams };
+        retryParams['fields[projects]'] = ['id', 'name'];
+        response = await api.get('/projects.json', { params: retryParams });
+      }
       logger.info('Successfully fetched projects using v3 API');
       return response.data;
     } catch (error: any) {
