@@ -10,7 +10,7 @@ import { createErrorResponse } from "../../utils/errorHandler.js";
 export const getTasksNeedingReplyDefinition = {
   name: "getTasksNeedingReply",
   description:
-    "Get tasks where the most recent comment is NOT from excludedUserId (default 364769). This is optimized for daily check-ins where team members asked questions and Jeff has not replied yet.",
+    "Get tasks where the most recent comment is NOT from excludedUserId (default 364769). Alias params are accepted (excludeUserId/excludeuserid, projectId/projectids, pagesize/maxpages/maxtasks, commentedAfterHours/commentedAfter).",
   inputSchema: {
     type: "object",
     properties: {
@@ -22,6 +22,22 @@ export const getTasksNeedingReplyDefinition = {
         type: "integer",
         description: "User ID to exclude as latest commenter. Default: 364769 (Jeff)."
       },
+      excludeUserId: {
+        type: "integer",
+        description: "Alias for excludedUserId."
+      },
+      excludeuserid: {
+        type: "integer",
+        description: "Lowercase alias for excludedUserId."
+      },
+      commentedAfterHours: {
+        type: "integer",
+        description: "Alias for sinceHours."
+      },
+      commentedAfter: {
+        type: "string",
+        description: "Alias for sinceHours as string (examples: '48', '48h', '48hrs')."
+      },
       projectIds: {
         type: "array",
         items: {
@@ -29,17 +45,40 @@ export const getTasksNeedingReplyDefinition = {
         },
         description: "Optional project IDs to scope comment scan."
       },
+      projectId: {
+        type: "integer",
+        description: "Alias for a single project ID filter."
+      },
+      projectids: {
+        type: "array",
+        items: {
+          type: "integer"
+        },
+        description: "Lowercase alias for projectIds."
+      },
       pageSize: {
         type: "integer",
         description: "Comment page size for backend scan. Default: 100."
+      },
+      pagesize: {
+        type: "integer",
+        description: "Lowercase alias for pageSize."
       },
       maxPages: {
         type: "integer",
         description: "Maximum comment pages to scan. Default: 10."
       },
+      maxpages: {
+        type: "integer",
+        description: "Lowercase alias for maxPages."
+      },
       maxTasks: {
         type: "integer",
         description: "Maximum tasks to return. Default: 200."
+      },
+      maxtasks: {
+        type: "integer",
+        description: "Lowercase alias for maxTasks."
       }
     }
   },
@@ -65,4 +104,3 @@ export async function handleGetTasksNeedingReply(input: any) {
     return createErrorResponse(error, "Getting tasks needing reply");
   }
 }
-

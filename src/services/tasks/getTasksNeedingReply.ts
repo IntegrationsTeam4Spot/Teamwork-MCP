@@ -6,15 +6,27 @@ import getTaskById from "./getTaskById.js";
 export interface GetTasksNeedingReplyParams {
   sinceHours?: number;
   excludedUserId?: number;
+  excludeUserId?: number;
+  excludeuserid?: number;
+  excludeduserid?: number;
+  commentedAfterHours?: number;
+  commentedAfter?: string;
   projectIds?: number[];
+  projectId?: number;
+  projectid?: number;
+  projectids?: number[];
   pageSize?: number;
+  pagesize?: number;
   maxPages?: number;
+  maxpages?: number;
   maxTasks?: number;
+  maxtasks?: number;
 }
 
 interface CommentLite {
   id: number | null;
   taskId: number | null;
+  projectId: number | null;
   authorId: number | null;
   authorName: string | null;
   content: string | null;
@@ -62,6 +74,22 @@ function toDateMs(value: any): number {
   return Number.isFinite(parsed) ? parsed : 0;
 }
 
+function parseHours(value: any): number | null {
+  const direct = toInt(value);
+  if (direct !== null) {
+    return direct;
+  }
+  if (typeof value !== "string") {
+    return null;
+  }
+  const normalized = value.trim().toLowerCase();
+  const match = normalized.match(/^(\d+)\s*(h|hr|hrs|hour|hours)?$/);
+  if (!match) {
+    return null;
+  }
+  return Number(match[1]);
+}
+
 function toText(value: any): string | null {
   if (typeof value !== "string") {
     return null;
@@ -102,6 +130,16 @@ function pickTaskId(comment: any): number | null {
     toInt(comment?.itemId) ??
     toInt(comment?.task?.id) ??
     toInt(comment?.object?.id) ??
+    null
+  );
+}
+
+function pickProjectId(comment: any): number | null {
+  return (
+    toInt(comment?.projectId) ??
+    toInt(comment?.project?.id) ??
+    toInt(comment?.task?.projectId) ??
+    toInt(comment?.task?.project?.id) ??
     null
   );
 }
@@ -260,21 +298,46 @@ export async function getTasksNeedingReply(
   excludedUserId: number;
   scannedComments: number;
   candidateTaskCount: number;
+  filteredOutByProject: number;
+  filteredOutByTime: number;
+  filteredOutByExcludedUser: number;
   tasks: TaskSummary[];
 }> {
-  const sinceHours = Math.max(1, Math.trunc(params.sinceHours ?? DEFAULT_SINCE_HOURS));
-  const excludedUserId = Math.trunc(params.excludedUserId ?? DEFAULT_EXCLUDED_USER_ID);
-  const pageSize = Math.max(1, Math.min(500, Math.trunc(params.pageSize ?? DEFAULT_PAGE_SIZE)));
-  const maxPages = Math.max(1, Math.min(100, Math.trunc(params.maxPages ?? DEFAULT_MAX_PAGES)));
-  const maxTasks = Math.max(1, Math.min(1000, Math.trunc(params.maxTasks ?? DEFAULT_MAX_TASKS)));
-  const projectIds = (params.projectIds ?? [])
+  const sinceHours = Math.max(
+    1,
+    Math.trunc(
+      parseHours(params.sinceHours) ??
+      parseHours(params.commentedAfterHours) ??
+      parseHours(params.commentedAfter) ??
+      DEFAULT_SINCE_HOURS
+    )
+  );
+  const excludedUserId = Math.trunc(
+    params.excludedUserId ??
+    params.excludeUserId ??
+    params.excludeuserid ??
+    params.excludeduserid ??
+    DEFAULT_EXCLUDED_USER_ID
+  );
+  const pageSize = Math.max(1, Math.min(500, Math.trunc(params.pageSize ?? params.pagesize ?? DEFAULT_PAGE_SIZE)));
+  const maxPages = Math.max(1, Math.min(100, Math.trunc(params.maxPages ?? params.maxpages ?? DEFAULT_MAX_PAGES)));
+  const maxTasks = Math.max(1, Math.min(1000, Math.trunc(params.maxTasks ?? params.maxtasks ?? DEFAULT_MAX_TASKS)));
+  const rawProjectIds = [
+    ...(params.projectIds ?? params.projectids ?? []),
+    ...(params.projectId !== undefined ? [params.projectId] : []),
+    ...(params.projectid !== undefined ? [params.projectid] : [])
+  ];
+  const projectIds = rawProjectIds
     .map((value) => toInt(value))
     .filter((value): value is number => value !== null);
-
-  const updatedAfterIso = new Date(Date.now() - sinceHours * 60 * 60 * 1000).toISOString();
+  const cutoffMs = Date.now() - sinceHours * 60 * 60 * 1000;
+  const updatedAfterIso = new Date(cutoffMs).toISOString();
 
   const latestByTask = new Map<number, CommentLite>();
   let scannedComments = 0;
+  let filteredOutByTime = 0;
+  let filteredOutByExcludedUser = 0;
+  let filteredOutByProject = 0;
 
   for (let page = 1; page <= maxPages; page++) {
     const pageData = await fetchCommentsPage(page, pageSize, updatedAfterIso, projectIds);
@@ -297,12 +360,23 @@ export async function getTasksNeedingReply(
       const candidate: CommentLite = {
         id: toInt(comment?.id),
         taskId,
+        projectId: pickProjectId(comment),
         authorId: pickAuthorId(comment),
         authorName: pickAuthorName(comment),
         content: pickCommentContent(comment),
         createdAt,
         sortTime
       };
+
+      if (candidate.sortTime > 0 && candidate.sortTime < cutoffMs) {
+        filteredOutByTime += 1;
+        continue;
+      }
+
+      if (projectIds.length > 0 && candidate.projectId !== null && !projectIds.includes(candidate.projectId)) {
+        filteredOutByProject += 1;
+        continue;
+      }
 
       const existing = latestByTask.get(taskId);
       if (!existing || candidate.sortTime >= existing.sortTime) {
@@ -316,13 +390,22 @@ export async function getTasksNeedingReply(
     }
   }
 
-  const candidateComments = [...latestByTask.values()]
-    .filter((entry) => entry.authorId !== excludedUserId)
-    .sort((a, b) => b.sortTime - a.sortTime)
-    .slice(0, maxTasks);
+  const sortedCandidateComments = [...latestByTask.values()]
+    .sort((a, b) => b.sortTime - a.sortTime);
+
+  const candidateComments = sortedCandidateComments.filter((entry) => {
+    const include = entry.authorId !== excludedUserId;
+    if (!include) {
+      filteredOutByExcludedUser += 1;
+    }
+    return include;
+  });
 
   const tasks: TaskSummary[] = [];
   for (const comment of candidateComments) {
+    if (tasks.length >= maxTasks) {
+      break;
+    }
     if (comment.taskId === null) {
       continue;
     }
@@ -339,6 +422,14 @@ export async function getTasksNeedingReply(
         projectId: null,
         projectName: null
       };
+    }
+
+    if (projectIds.length > 0) {
+      const taskProjectId = summary.projectId;
+      if (taskProjectId === null || !projectIds.includes(taskProjectId)) {
+        filteredOutByProject += 1;
+        continue;
+      }
     }
 
     tasks.push({
@@ -363,6 +454,9 @@ export async function getTasksNeedingReply(
     excludedUserId,
     scannedComments,
     candidateTaskCount: tasks.length,
+    filteredOutByProject,
+    filteredOutByTime,
+    filteredOutByExcludedUser,
     tasks
   };
 }

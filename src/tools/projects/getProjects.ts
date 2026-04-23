@@ -227,28 +227,74 @@ function extractProjectsArray(payload: any): any[] {
 function statusFromProject(project: any): string {
   const directStatus =
     normalizeStatus(project?.status) ??
+    normalizeStatus(project?.status?.name) ??
+    normalizeStatus(project?.status?.status) ??
     normalizeStatus(project?.projectStatus) ??
+    normalizeStatus(project?.projectStatus?.name) ??
+    normalizeStatus(project?.projectStatus?.status) ??
     normalizeStatus(project?.statusName);
+
   if (directStatus) {
     return directStatus;
   }
 
-  const statusId =
-    project?.statusId ??
-    project?.projectStatusId ??
-    project?.projectStatus?.id ??
-    project?.status?.id;
-  if (statusId !== undefined && statusId !== null) {
-    return String(statusId);
+  const deletedAt = project?.deletedAt ?? project?.dateDeleted;
+  if (deletedAt) {
+    return "deleted";
   }
 
-  if (project?.isArchived === true) {
+  if (project?.isArchived === true || project?.archived === true) {
     return "archived";
   }
-  if (project?.completed === true || project?.isCompleted === true) {
+  if (
+    project?.completed === true ||
+    project?.isCompleted === true ||
+    project?.dateCompleted ||
+    project?.completedAt
+  ) {
     return "completed";
   }
-  return "unknown";
+
+  const dueDateValue = project?.dueDate ?? project?.endDate ?? project?.deadline;
+  if (typeof dueDateValue === "string" && dueDateValue.trim()) {
+    const dueDate = Date.parse(dueDateValue);
+    if (Number.isFinite(dueDate)) {
+      const now = Date.now();
+      if (dueDate < now) {
+        return "late";
+      }
+      if (dueDate > now) {
+        return "upcoming";
+      }
+    }
+  }
+
+  return "active";
+}
+
+function matchesStatusFilter(projectStatus: string, requestedStatus: string): boolean {
+  const status = normalizeStatus(projectStatus);
+  const requested = normalizeStatus(requestedStatus);
+  if (!status || !requested) {
+    return false;
+  }
+
+  if (requested === "active" || requested === "current") {
+    return status === "active" || status === "current";
+  }
+  if (requested === "completed") {
+    return status === "completed";
+  }
+  if (requested === "deleted") {
+    return status === "deleted";
+  }
+  if (requested === "late") {
+    return status === "late";
+  }
+  if (requested === "upcoming") {
+    return status === "upcoming";
+  }
+  return status === requested;
 }
 
 // Tool handler
@@ -265,6 +311,9 @@ export async function handleGetProjects(input: any) {
 
     if (statusFilter && !apiInput.projectStatuses) {
       apiInput.projectStatuses = [statusFilter];
+    }
+    if (statusFilter && apiInput.status === undefined) {
+      apiInput.status = statusFilter;
     }
     if (apiInput.includeProjectStatus === undefined) {
       apiInput.includeProjectStatus = true;
@@ -313,16 +362,19 @@ export async function handleGetProjects(input: any) {
       logger.info(`Projects response is not an array or object: ${JSON.stringify(projects).substring(0, 200)}...`);
     }
     
-    const projectRows = extractProjectsArray(projects).map((project: any) => {
-      const derivedStatus = statusFromProject(project);
-      return {
-        id: project?.id ?? null,
-        name: project?.name ?? null,
-        status: derivedStatus === "unknown" && statusFilter ? statusFilter : derivedStatus
-      };
-    });
+    const allProjectRows = extractProjectsArray(projects).map((project: any) => ({
+      id: project?.id ?? null,
+      name: project?.name ?? null,
+      status: statusFromProject(project)
+    }));
+
+    const projectRows = statusFilter
+      ? allProjectRows.filter((project) => matchesStatusFilter(project.status, statusFilter))
+      : allProjectRows;
 
     const payload: Record<string, any> = {
+      requestedStatus: statusFilter,
+      totalBeforeFilter: allProjectRows.length,
       count: projectRows.length,
       projects: projectRows
     };
