@@ -21,12 +21,16 @@ export interface GetTasksNeedingReplyParams {
   maxpages?: number;
   maxTasks?: number;
   maxtasks?: number;
+  includeFullCommentContent?: boolean;
+  previewLength?: number;
+  previewlength?: number;
 }
 
 interface CommentLite {
   id: number | null;
   taskId: number | null;
   projectId: number | null;
+  projectName?: string | null;
   authorId: number | null;
   authorName: string | null;
   content: string | null;
@@ -47,14 +51,16 @@ interface TaskSummary {
     authorName: string | null;
     createdAt: string | null;
     contentPreview: string | null;
+    content?: string | null;
   };
 }
 
 const DEFAULT_SINCE_HOURS = 48;
 const DEFAULT_EXCLUDED_USER_ID = 364769;
-const DEFAULT_PAGE_SIZE = 100;
+const DEFAULT_PAGE_SIZE = 50;
 const DEFAULT_MAX_PAGES = 10;
 const DEFAULT_MAX_TASKS = 200;
+const DEFAULT_PREVIEW_LENGTH = 180;
 
 function toInt(value: any): number | null {
   if (typeof value === "number" && Number.isFinite(value)) {
@@ -147,10 +153,17 @@ function pickProjectId(comment: any): number | null {
 function pickAuthorId(comment: any): number | null {
   return (
     toInt(comment?.authorId) ??
+    toInt(comment?.authorUserId) ??
+    toInt(comment?.creatorUserId) ??
+    toInt(comment?.createdByUserId) ??
+    toInt(comment?.postedByUserId) ??
     toInt(comment?.userId) ??
     toInt(comment?.createdBy) ??
     toInt(comment?.personId) ??
+    toInt(comment?.creatorId) ??
     toInt(comment?.user?.id) ??
+    toInt(comment?.author?.id) ??
+    toInt(comment?.postedBy?.id) ??
     null
   );
 }
@@ -163,16 +176,28 @@ function pickAuthorName(comment: any): string | null {
   return (
     toText(comment?.authorName) ??
     toText(comment?.user?.name) ??
-    (combinedName.length > 0 ? combinedName : null)
+    (combinedName.length > 0 ? combinedName : null) ??
+    toText(comment?.postedBy?.name) ??
+    toText(comment?.postedBy?.firstName) ??
+    null
   );
 }
 
 function pickCommentTime(comment: any): string | null {
   return (
+    toText(comment?.date) ??
+    toText(comment?.postedDateTime) ??
+    toText(comment?.dateLastEdited) ??
     toText(comment?.updatedAt) ??
     toText(comment?.dateUpdated) ??
     toText(comment?.createdAt) ??
     toText(comment?.dateCreated) ??
+    toText(comment?.postedAt) ??
+    toText(comment?.postedOn) ??
+    toText(comment?.createdOn) ??
+    toText(comment?.dateTime) ??
+    toText(comment?.datetime) ??
+    toText(comment?.createdDate) ??
     null
   );
 }
@@ -181,6 +206,7 @@ function pickCommentContent(comment: any): string | null {
   return (
     toText(comment?.content) ??
     toText(comment?.body) ??
+    toText(comment?.htmlBody) ??
     toText(comment?.comment) ??
     toText(comment?.text) ??
     null
@@ -189,17 +215,20 @@ function pickCommentContent(comment: any): string | null {
 
 function isTaskComment(comment: any): boolean {
   const objectType = String(comment?.objectType ?? comment?.itemType ?? "").toLowerCase();
+  const taskId = pickTaskId(comment);
   if (!objectType) {
-    return true;
+    return taskId !== null;
   }
   return objectType.includes("task");
 }
 
-function toPreview(content: string | null): string | null {
+function toPreview(content: string | null, previewLength: number): string | null {
   if (!content) {
     return null;
   }
-  return content.length > 180 ? `${content.slice(0, 177)}...` : content;
+  return content.length > previewLength
+    ? `${content.slice(0, Math.max(0, previewLength - 3))}...`
+    : content;
 }
 
 function extractComments(responseData: any): any[] {
@@ -215,6 +244,16 @@ function extractComments(responseData: any): any[] {
   return [];
 }
 
+function toCsv(values: number[]): string | undefined {
+  if (!Array.isArray(values) || values.length === 0) {
+    return undefined;
+  }
+  const parsed = values
+    .map((value) => toInt(value))
+    .filter((value): value is number => value !== null);
+  return parsed.length > 0 ? parsed.join(",") : undefined;
+}
+
 async function fetchCommentsPage(
   page: number,
   pageSize: number,
@@ -227,16 +266,18 @@ async function fetchCommentsPage(
     pageSize,
     updatedAfter: updatedAfterIso,
     orderBy: "date",
-    orderMode: "desc"
+    orderMode: "desc",
+    include: "users,tasks,projects"
   };
 
-  if (projectIds && projectIds.length > 0) {
-    baseParams.projectIds = projectIds;
+  const projectIdsCsv = toCsv(projectIds ?? []);
+  if (projectIdsCsv) {
+    baseParams.projectIds = projectIdsCsv;
   }
 
   const paramCandidates: Record<string, any>[] = [
-    { ...baseParams, objectTypes: ["tasks"] },
-    { ...baseParams, objectTypes: ["task"] },
+    { ...baseParams, objectTypes: "task" },
+    { ...baseParams, objectType: "task" },
     baseParams
   ];
 
@@ -255,11 +296,23 @@ async function fetchCommentsPage(
 }
 
 function extractProjectIdFromTask(task: any): number | null {
-  return toInt(task?.projectId) ?? toInt(task?.project?.id) ?? null;
+  return (
+    toInt(task?.projectId) ??
+    toInt(task?.project?.id) ??
+    toInt(task?.project?.projectId) ??
+    toInt(task?.project?.value) ??
+    toInt(task?.tasklist?.projectId) ??
+    null
+  );
 }
 
 function extractProjectNameFromTask(task: any): string | null {
-  return toText(task?.projectName) ?? toText(task?.project?.name) ?? null;
+  return (
+    toText(task?.projectName) ??
+    toText(task?.project?.name) ??
+    toText(task?.tasklist?.projectName) ??
+    null
+  );
 }
 
 function extractTaskName(task: any): string | null {
@@ -295,7 +348,12 @@ export async function getTasksNeedingReply(
   params: GetTasksNeedingReplyParams = {}
 ): Promise<{
   sinceHours: number;
-  excludedUserId: number;
+  excludedUserId: number | null;
+  projectIdsApplied: number[];
+  includeFullCommentContent: boolean;
+  previewLength: number;
+  pagesScanned: number;
+  rawCommentsFetched: number;
   scannedComments: number;
   candidateTaskCount: number;
   filteredOutByProject: number;
@@ -312,16 +370,24 @@ export async function getTasksNeedingReply(
       DEFAULT_SINCE_HOURS
     )
   );
-  const excludedUserId = Math.trunc(
+  const excludedInput =
     params.excludedUserId ??
     params.excludeUserId ??
     params.excludeuserid ??
-    params.excludeduserid ??
-    DEFAULT_EXCLUDED_USER_ID
-  );
+    params.excludeduserid;
+  const excludedUserIdValue = toInt(excludedInput);
+  const excludedUserId =
+    excludedUserIdValue !== null
+      ? (excludedUserIdValue > 0 ? excludedUserIdValue : null)
+      : DEFAULT_EXCLUDED_USER_ID;
   const pageSize = Math.max(1, Math.min(500, Math.trunc(params.pageSize ?? params.pagesize ?? DEFAULT_PAGE_SIZE)));
   const maxPages = Math.max(1, Math.min(100, Math.trunc(params.maxPages ?? params.maxpages ?? DEFAULT_MAX_PAGES)));
   const maxTasks = Math.max(1, Math.min(1000, Math.trunc(params.maxTasks ?? params.maxtasks ?? DEFAULT_MAX_TASKS)));
+  const includeFullCommentContent = Boolean(params.includeFullCommentContent);
+  const previewLength = Math.max(
+    20,
+    Math.min(5000, Math.trunc(params.previewLength ?? params.previewlength ?? DEFAULT_PREVIEW_LENGTH))
+  );
   const rawProjectIds = [
     ...(params.projectIds ?? params.projectids ?? []),
     ...(params.projectId !== undefined ? [params.projectId] : []),
@@ -334,6 +400,9 @@ export async function getTasksNeedingReply(
   const updatedAfterIso = new Date(cutoffMs).toISOString();
 
   const latestByTask = new Map<number, CommentLite>();
+  const seenCommentKeys = new Set<string>();
+  let pagesScanned = 0;
+  let rawCommentsFetched = 0;
   let scannedComments = 0;
   let filteredOutByTime = 0;
   let filteredOutByExcludedUser = 0;
@@ -342,11 +411,27 @@ export async function getTasksNeedingReply(
   for (let page = 1; page <= maxPages; page++) {
     const pageData = await fetchCommentsPage(page, pageSize, updatedAfterIso, projectIds);
     const comments = extractComments(pageData);
+    pagesScanned += 1;
+    rawCommentsFetched += comments.length;
     if (comments.length === 0) {
       break;
     }
 
-    for (const comment of comments) {
+    let newCommentsOnPage = 0;
+
+    for (let index = 0; index < comments.length; index++) {
+      const comment = comments[index];
+      const commentId = toInt(comment?.id);
+      const syntheticKey = `${pickTaskId(comment) ?? "na"}:${pickCommentTime(comment) ?? "na"}:${toText(
+        pickCommentContent(comment)
+      ) ?? "na"}:${index}`;
+      const dedupeKey = commentId !== null ? `id:${commentId}` : `synthetic:${syntheticKey}`;
+      if (seenCommentKeys.has(dedupeKey)) {
+        continue;
+      }
+      seenCommentKeys.add(dedupeKey);
+      newCommentsOnPage += 1;
+
       if (!isTaskComment(comment)) {
         continue;
       }
@@ -385,7 +470,8 @@ export async function getTasksNeedingReply(
       scannedComments += 1;
     }
 
-    if (comments.length < pageSize) {
+    if (newCommentsOnPage === 0) {
+      logger.info(`Stopping pagination at page ${page}: no new comments discovered.`);
       break;
     }
   }
@@ -394,7 +480,7 @@ export async function getTasksNeedingReply(
     .sort((a, b) => b.sortTime - a.sortTime);
 
   const candidateComments = sortedCandidateComments.filter((entry) => {
-    const include = entry.authorId !== excludedUserId;
+    const include = excludedUserId === null ? true : entry.authorId !== excludedUserId;
     if (!include) {
       filteredOutByExcludedUser += 1;
     }
@@ -444,7 +530,8 @@ export async function getTasksNeedingReply(
         authorId: comment.authorId,
         authorName: comment.authorName,
         createdAt: comment.createdAt,
-        contentPreview: toPreview(comment.content)
+        contentPreview: toPreview(comment.content, previewLength),
+        ...(includeFullCommentContent ? { content: comment.content } : {})
       }
     });
   }
@@ -452,6 +539,11 @@ export async function getTasksNeedingReply(
   return {
     sinceHours,
     excludedUserId,
+    projectIdsApplied: projectIds,
+    includeFullCommentContent,
+    previewLength,
+    pagesScanned,
+    rawCommentsFetched,
     scannedComments,
     candidateTaskCount: tasks.length,
     filteredOutByProject,

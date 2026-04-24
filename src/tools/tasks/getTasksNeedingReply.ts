@@ -10,7 +10,7 @@ import { createErrorResponse } from "../../utils/errorHandler.js";
 export const getTasksNeedingReplyDefinition = {
   name: "getTasksNeedingReply",
   description:
-    "Get tasks where the most recent comment is NOT from excludedUserId (default 364769). Alias params are accepted (excludeUserId/excludeuserid, projectId/projectids, pagesize/maxpages/maxtasks, commentedAfterHours/commentedAfter).",
+    "Get tasks where the latest task comment is NOT from excludedUserId (default 364769). Returns one latest-comment record per task (not full comment history). Alias params are accepted (excludeUserId/excludeuserid, projectId/projectids, pagesize/maxpages/maxtasks, commentedAfterHours/commentedAfter).",
   inputSchema: {
     type: "object",
     properties: {
@@ -20,7 +20,7 @@ export const getTasksNeedingReplyDefinition = {
       },
       excludedUserId: {
         type: "integer",
-        description: "User ID to exclude as latest commenter. Default: 364769 (Jeff)."
+        description: "User ID to exclude as latest commenter. Default: 364769 (Jeff). Set to 0 to disable exclusion."
       },
       excludeUserId: {
         type: "integer",
@@ -58,7 +58,7 @@ export const getTasksNeedingReplyDefinition = {
       },
       pageSize: {
         type: "integer",
-        description: "Comment page size for backend scan. Default: 100."
+        description: "Comment page size for backend scan. Default: 50."
       },
       pagesize: {
         type: "integer",
@@ -79,6 +79,18 @@ export const getTasksNeedingReplyDefinition = {
       maxtasks: {
         type: "integer",
         description: "Lowercase alias for maxTasks."
+      },
+      includeFullCommentContent: {
+        type: "boolean",
+        description: "Include full latest comment content in each task result (default: false)."
+      },
+      previewLength: {
+        type: "integer",
+        description: "Length for contentPreview truncation (default: 180)."
+      },
+      previewlength: {
+        type: "integer",
+        description: "Lowercase alias for previewLength."
       }
     }
   },
