@@ -16,7 +16,7 @@ export const getProjects = async (params?: ProjectQueryParams) => {
       apiParams.include = ['tags', 'projectCategories', 'users', 'projectOwners', 'createdBy', 'updatedBy', 'workflows', 'stages', 'workflowStages'];
     }
     if (!apiParams['fields[projects]']) {
-      apiParams['fields[projects]'] = ['id', 'name', 'status', 'statusId'];
+      apiParams['fields[projects]'] = ['id', 'name', 'status', 'statusId', 'subStatus', 'completedAt', 'dateDeleted'];
     }
     if (!apiParams['fields[tags]']) {
       apiParams['fields[tags]'] = ['id', 'name', 'color', 'count'];

@@ -10,14 +10,14 @@ import { createErrorResponse } from "../../utils/errorHandler.js";
 // Tool definition
 export const getProjectsDefinition = {
   name: "getProjects",
-  description: "Get projects from Teamwork via GET /projects.json. Optional status filter supported. Returns simplified project rows with id, name, and status.",
+  description: "Get projects from Teamwork via GET /projects.json. Optional status filter supported. Status is normalized from Teamwork status/subStatus (inactive -> archived; current/late/upcoming from subStatus). Returns simplified project rows with id, name, and status.",
   inputSchema: {
     type: "object",
     properties: {
       status: {
         type: "string",
-        enum: ["active", "current", "late", "upcoming", "completed", "deleted"],
-        description: "Optional convenience filter mapped to Teamwork projectStatuses."
+        enum: ["active", "current", "late", "upcoming", "completed", "deleted", "archived", "inactive"],
+        description: "Optional filter. archived/inactive map to Teamwork archived (inactive). active includes active/current/late/upcoming."
       },
       includeRaw: {
         type: "boolean",
@@ -108,6 +108,10 @@ export const getProjectsDefinition = {
       includeArchivedProjects: {
         type: "boolean",
         description: "Include archived projects"
+      },
+      onlyArchivedProjects: {
+        type: "boolean",
+        description: "Return only archived projects."
       },
       includeCompletedProjects: {
         type: "boolean",
@@ -224,28 +228,49 @@ function extractProjectsArray(payload: any): any[] {
   return [];
 }
 
-function statusFromProject(project: any): string {
-  const directStatus =
-    normalizeStatus(project?.status) ??
-    normalizeStatus(project?.status?.name) ??
-    normalizeStatus(project?.status?.status) ??
-    normalizeStatus(project?.projectStatus) ??
-    normalizeStatus(project?.projectStatus?.name) ??
-    normalizeStatus(project?.projectStatus?.status) ??
-    normalizeStatus(project?.statusName);
-
-  if (directStatus) {
-    return directStatus;
+function canonicalizeProjectStatus(value: any): string | null {
+  const normalized = normalizeStatus(value);
+  if (!normalized) {
+    return null;
   }
 
+  if (normalized === "inactive" || normalized === "archived") {
+    return "archived";
+  }
+
+  return normalized;
+}
+
+function statusFromProject(project: any): string {
   const deletedAt = project?.deletedAt ?? project?.dateDeleted;
   if (deletedAt) {
     return "deleted";
   }
 
-  if (project?.isArchived === true || project?.archived === true) {
+  if (
+    project?.isArchived === true ||
+    project?.archived === true ||
+    project?.archivedAt
+  ) {
     return "archived";
   }
+
+  const primaryStatus = normalizeStatus(
+    project?.status ??
+    project?.status?.name ??
+    project?.status?.status ??
+    project?.projectStatus ??
+    project?.projectStatus?.name ??
+    project?.projectStatus?.status ??
+    project?.statusName
+  );
+  const subStatus = normalizeStatus(project?.subStatus ?? project?.projectSubStatus);
+
+  // Teamwork archived projects are usually status=inactive.
+  if (primaryStatus === "inactive") {
+    return "archived";
+  }
+
   if (
     project?.completed === true ||
     project?.isCompleted === true ||
@@ -253,6 +278,16 @@ function statusFromProject(project: any): string {
     project?.completedAt
   ) {
     return "completed";
+  }
+
+  // For active projects, subStatus is the most specific operational state.
+  if (subStatus === "late" || subStatus === "upcoming" || subStatus === "current") {
+    return subStatus;
+  }
+
+  const directStatus = canonicalizeProjectStatus(primaryStatus);
+  if (directStatus && directStatus !== "archived") {
+    return directStatus;
   }
 
   const dueDateValue = project?.dueDate ?? project?.endDate ?? project?.deadline;
@@ -273,14 +308,18 @@ function statusFromProject(project: any): string {
 }
 
 function matchesStatusFilter(projectStatus: string, requestedStatus: string): boolean {
-  const status = normalizeStatus(projectStatus);
-  const requested = normalizeStatus(requestedStatus);
+  const status = canonicalizeProjectStatus(projectStatus);
+  const requested = canonicalizeProjectStatus(requestedStatus);
   if (!status || !requested) {
     return false;
   }
 
-  if (requested === "active" || requested === "current") {
-    return status === "active" || status === "current";
+  if (requested === "active") {
+    // "active" means any non-archived active workload state.
+    return status === "active" || status === "current" || status === "late" || status === "upcoming";
+  }
+  if (requested === "archived") {
+    return status === "archived";
   }
   if (requested === "completed") {
     return status === "completed";
@@ -297,6 +336,108 @@ function matchesStatusFilter(projectStatus: string, requestedStatus: string): bo
   return status === requested;
 }
 
+function applyStatusFilterToApiInput(apiInput: Record<string, any>, statusFilter: string | null): void {
+  const requested = canonicalizeProjectStatus(statusFilter);
+  if (!requested) {
+    return;
+  }
+
+  // Teamwork archived projects are typically represented with inactive status.
+  if (requested === "archived") {
+    if (apiInput.includeArchivedProjects === undefined) {
+      apiInput.includeArchivedProjects = true;
+    }
+    if (apiInput.onlyArchivedProjects === undefined) {
+      apiInput.onlyArchivedProjects = true;
+    }
+    return;
+  }
+
+  if (requested === "completed" && apiInput.includeCompletedProjects === undefined) {
+    apiInput.includeCompletedProjects = true;
+  }
+
+  if (requested === "deleted") {
+    if (apiInput.includeArchivedProjects === undefined) {
+      apiInput.includeArchivedProjects = true;
+    }
+    if (apiInput.includeCompletedProjects === undefined) {
+      apiInput.includeCompletedProjects = true;
+    }
+  }
+}
+
+function buildStatusBreakdown(projectRows: Array<{ status: string | null }>): Record<string, number> {
+  const breakdown: Record<string, number> = {};
+  for (const row of projectRows) {
+    const key = row.status ?? "unknown";
+    breakdown[key] = (breakdown[key] ?? 0) + 1;
+  }
+  return breakdown;
+}
+
+async function fetchProjectsWithOptionalPagination(
+  apiInput: Record<string, any>,
+  statusFilter: string | null
+): Promise<any> {
+  const shouldAutoPaginate =
+    !!statusFilter &&
+    apiInput.page === undefined &&
+    apiInput.pageSize === undefined;
+
+  if (!shouldAutoPaginate) {
+    return teamworkService.getProjects(apiInput);
+  }
+
+  const pageSize = 200;
+  const maxPages = 50;
+  let page = 1;
+  const aggregated: any[] = [];
+  let firstResponse: any = null;
+  let pagesFetched = 0;
+
+  while (page <= maxPages) {
+    const response = await teamworkService.getProjects({
+      ...apiInput,
+      page,
+      pageSize
+    });
+    if (page === 1) {
+      firstResponse = response;
+    }
+
+    const pageProjects = extractProjectsArray(response);
+    aggregated.push(...pageProjects);
+    pagesFetched += 1;
+
+    if (pageProjects.length < pageSize) {
+      break;
+    }
+    page += 1;
+  }
+
+  if (firstResponse && typeof firstResponse === "object" && !Array.isArray(firstResponse)) {
+    return {
+      ...firstResponse,
+      projects: aggregated,
+      _mcpPagination: {
+        autoPagination: true,
+        pageSize,
+        pagesFetched
+      }
+    };
+  }
+
+  return {
+    projects: aggregated,
+    _mcpPagination: {
+      autoPagination: true,
+      pageSize,
+      pagesFetched
+    }
+  };
+}
+
 // Tool handler
 export async function handleGetProjects(input: any) {
   logger.info('=== getProjects tool called ===');
@@ -309,18 +450,16 @@ export async function handleGetProjects(input: any) {
     delete apiInput.status;
     delete apiInput.includeRaw;
 
-    if (statusFilter && !apiInput.projectStatuses) {
-      apiInput.projectStatuses = [statusFilter];
-    }
+    applyStatusFilterToApiInput(apiInput, statusFilter);
     if (statusFilter && apiInput.status === undefined) {
-      apiInput.status = statusFilter;
+      apiInput.status = canonicalizeProjectStatus(statusFilter) ?? statusFilter;
     }
     if (apiInput.includeProjectStatus === undefined) {
       apiInput.includeProjectStatus = true;
     }
 
     logger.info('Calling teamworkService.getProjects()');
-    const projects = await teamworkService.getProjects(apiInput);
+    const projects = await fetchProjectsWithOptionalPagination(apiInput, statusFilter);
     
     // Debug the response
     logger.info(`Projects response type: ${typeof projects}`);
@@ -373,11 +512,16 @@ export async function handleGetProjects(input: any) {
       : allProjectRows;
 
     const payload: Record<string, any> = {
-      requestedStatus: statusFilter,
+      requestedStatus: canonicalizeProjectStatus(statusFilter) ?? statusFilter,
+      apiReturnedCount: allProjectRows.length,
+      statusBreakdown: buildStatusBreakdown(allProjectRows),
       totalBeforeFilter: allProjectRows.length,
       count: projectRows.length,
       projects: projectRows
     };
+    if ((projects as any)?._mcpPagination) {
+      payload.pagination = (projects as any)._mcpPagination;
+    }
     if (includeRaw) {
       payload.raw = projects;
     }

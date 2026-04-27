@@ -52,7 +52,7 @@ export interface ProjectQueryParams {
   teamIds?: number[];
   selectedColumns?: string[];
   projectTagIds?: number[];
-  projectStatuses?: ('active' | 'current' | 'late' | 'upcoming' | 'completed' | 'deleted')[];
+  projectStatuses?: ('active' | 'current' | 'late' | 'upcoming' | 'completed' | 'deleted' | 'archived' | 'inactive')[];
   projectOwnerIds?: number[];
   projectIds?: number[];
   projectHealths?: (0 | 1 | 2 | 3)[];

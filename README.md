@@ -25,7 +25,7 @@ The following tools are available through the MCP server:
 
 ### Project Tools
 
-- `getProjects` - Get projects (supports optional `status` filter) and returns simplified `id`, `name`, `status` rows
+- `getProjects` - Get projects (supports optional `status` including `active/current/late/upcoming/completed/archived/inactive`, plus `onlyArchivedProjects`) and returns simplified `id`, `name`, `status` rows
 - `getCurrentProject` - Gets details about the current project
 - `getWorkflows` - Get workflows (use returned workflow IDs for deterministic `updateTask` stage moves)
 - `getWorkflowStages` - Get all stages for a specific workflow (use returned stage IDs for deterministic `updateTask` stage moves)
