@@ -49,6 +49,7 @@ import getCompanyById from './companies/getCompanyById.js';
 
 // Time-related exports
 import getTime, { GetTimeParams } from './time/getTime.js';
+import createTimelog from './time/createTimelog.js';
 import getTimezones from './core/getTimezones.js';
 
 // Reporting exports
@@ -70,7 +71,7 @@ export { getTasks, getTasksByProjectId, getTaskListsByProjectId, getTaskById, cr
 export { createComment };
 export { getPeople, PeopleQueryParams, getPersonById, getProjectPeople, addPeopleToProject, AddPeopleToProjectPayload, deletePerson, updatePerson, getPeopleMetricsPerformance, getPeopleUtilization, getProjectPerson };
 export { createCompany, updateCompany, deleteCompany, getCompanies, getCompanyById };
-export { getTime, GetTimeParams };
+export { getTime, GetTimeParams, createTimelog };
 export { getUserTaskCompletion };
 export { getTimezones };
 
@@ -123,6 +124,7 @@ export default {
   
   // Time
   getTime,
+  createTimelog,
 
   // Reporting
   getUserTaskCompletion,

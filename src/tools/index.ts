@@ -61,6 +61,7 @@ import { getProjectsReportingUtilizationDefinition as getProjectsReportingUtiliz
 
 // Time-related imports
 import { getTimeDefinition as getTime, handleGetTime } from './time/getTime.js';
+import { createTimelogDefinition as createTimelog, handleCreateTimelog } from './time/createTimelog.js';
 import { getProjectsAllocationsTimeDefinition as getAllocationTime, handleGetProjectsAllocationsTime } from './time/getAllocationTime.js';
 
 // Core
@@ -113,6 +114,7 @@ const toolPairs: ToolPair[] = [
   { definition: getProjectsPeopleUtilization, handler: handleGetProjectsPeopleUtilization },
   { definition: getAllocationTime, handler: handleGetProjectsAllocationsTime },
   { definition: getTime, handler: handleGetTime },
+  { definition: createTimelog, handler: handleCreateTimelog },
   { definition: getProjectPerson, handler: handleGetProjectPerson },
   { definition: getProjectsReportingUserTaskCompletion, handler: handleGetProjectsReportingUserTaskCompletion },
   { definition: getProjectsReportingUtilization, handler: handleGetProjectsReportingUtilization },
@@ -167,6 +169,7 @@ export { handleGetCompanyById } from './companies/getCompanyById.js';
 export { handleGetProjectsPeopleMetricsPerformance } from './people/getPeopleMetricsPerformance.js';
 export { handleGetProjectsPeopleUtilization } from './people/getPeopleUtilization.js';
 export { handleGetTime } from './time/getTime.js';
+export { handleCreateTimelog } from './time/createTimelog.js';
 export { handleGetProjectsAllocationsTime } from './time/getAllocationTime.js';
 export { handleGetProjectPerson } from './people/getProjectPerson.js';
 export { handleGetProjectsReportingUserTaskCompletion } from './reporting/getUserTaskCompletion.js';

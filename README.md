@@ -84,6 +84,7 @@ The following tools are available through the MCP server:
 ### Time Tools
 
 - `getTime` - Get all time entries
+- `createTimelog` - Create/log a time entry against a specific task
 - `getProjectsAllocationsTime` - Get project allocations time
 - `getTimezones` - Get all available timezones in Teamwork (useful when updating user timezones)
 
