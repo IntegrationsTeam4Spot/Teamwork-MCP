@@ -79,6 +79,122 @@ function stageDisplayName(stage: any): string | undefined {
   return undefined;
 }
 
+function toText(value: any): string | undefined {
+  if (typeof value !== "string") {
+    return undefined;
+  }
+  const trimmed = value.trim();
+  return trimmed.length > 0 ? trimmed : undefined;
+}
+
+function toBoolean(value: any): boolean | undefined {
+  if (typeof value === "boolean") {
+    return value;
+  }
+  if (typeof value === "number") {
+    return value !== 0;
+  }
+  if (typeof value === "string") {
+    const normalized = value.trim().toLowerCase();
+    if (!normalized) {
+      return undefined;
+    }
+    if (["true", "1", "yes", "y"].includes(normalized)) {
+      return true;
+    }
+    if (["false", "0", "no", "n"].includes(normalized)) {
+      return false;
+    }
+  }
+  return undefined;
+}
+
+function taskStatusValue(task: any): string | undefined {
+  return (
+    toText(task?.status) ??
+    toText(task?.status?.name) ??
+    toText(task?.status?.status) ??
+    toText(task?.taskStatus) ??
+    toText(task?.taskStatus?.name) ??
+    toText(task?.taskStatus?.status)
+  );
+}
+
+function completionDateValue(task: any): string | undefined {
+  return (
+    toText(task?.completedAt) ??
+    toText(task?.completedOn) ??
+    toText(task?.completedDate) ??
+    toText(task?.dateCompleted)
+  );
+}
+
+function deriveTaskCompletion(task: any): {
+  isCompleted: boolean;
+  completedAt: string | null;
+  rawStatus: string | null;
+  normalizedStatus: string | null;
+  source: "explicit-flag" | "completion-date" | "status" | "none";
+} {
+  const rawStatus = taskStatusValue(task);
+  const normalizedRawStatus = rawStatus?.trim().toLowerCase() ?? "";
+  const completedAt = completionDateValue(task) ?? null;
+  const explicitCompleted =
+    toBoolean(task?.completed) ??
+    toBoolean(task?.isCompleted) ??
+    toBoolean(task?.complete);
+
+  if (explicitCompleted === true) {
+    return {
+      isCompleted: true,
+      completedAt,
+      rawStatus: rawStatus ?? null,
+      normalizedStatus: "completed",
+      source: "explicit-flag"
+    };
+  }
+
+  if (explicitCompleted === false) {
+    return {
+      isCompleted: false,
+      completedAt,
+      rawStatus: rawStatus ?? null,
+      normalizedStatus: rawStatus ?? null,
+      source: "explicit-flag"
+    };
+  }
+
+  if (completedAt) {
+    return {
+      isCompleted: true,
+      completedAt,
+      rawStatus: rawStatus ?? null,
+      normalizedStatus: "completed",
+      source: "completion-date"
+    };
+  }
+
+  if (["completed", "complete", "done", "closed"].includes(normalizedRawStatus)) {
+    return {
+      isCompleted: true,
+      completedAt,
+      rawStatus: rawStatus ?? null,
+      normalizedStatus: "completed",
+      source: "status"
+    };
+  }
+
+  const normalizedStatus = rawStatus ?? null;
+
+  return {
+    isCompleted: false,
+    completedAt,
+    rawStatus: rawStatus ?? null,
+    normalizedStatus,
+    source: "none"
+  };
+}
+
 function extractTasks(payload: any): any[] {
   if (!payload || typeof payload !== "object") {
     return [];
@@ -632,6 +748,8 @@ export async function enrichTaskLookupValues(payload: any): Promise<any> {
       (task as any).workflows = normalizedWorkflows;
     }
 
+    const completion = deriveTaskCompletion(task);
+
     (task as any).lookup = lookup;
     (task as any).projectName = lookup.projectName;
     (task as any).tasklistName = lookup.tasklistName;
@@ -643,6 +761,22 @@ export async function enrichTaskLookupValues(payload: any): Promise<any> {
     (task as any).workflowName = lookup.workflowName;
     (task as any).stageName = lookup.stageName;
     (task as any).stageLabel = lookup.stageName;
+    (task as any).isCompleted = completion.isCompleted;
+    (task as any).completed = completion.isCompleted;
+    (task as any).completedAt = completion.completedAt ?? (task as any).completedAt ?? null;
+    (task as any).statusRaw = completion.rawStatus;
+    (task as any).statusNormalized = completion.normalizedStatus;
+    (task as any).completionSource = completion.source;
+    if (completion.normalizedStatus) {
+      (task as any).status = completion.normalizedStatus;
+    }
+    (task as any).lookup.completion = {
+      isCompleted: completion.isCompleted,
+      completedAt: completion.completedAt,
+      rawStatus: completion.rawStatus,
+      normalizedStatus: completion.normalizedStatus,
+      source: completion.source
+    };
   }
 
   return result;

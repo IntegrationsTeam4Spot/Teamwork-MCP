@@ -8,13 +8,14 @@ import teamworkService from "../../services/index.js";
 import { TaskRequest } from "../../models/TaskRequest.js";
 import { createErrorResponse } from "../../utils/errorHandler.js";
 import { resolveWorkflowStageByNameForTask } from "./taskLookup.js";
+import { enrichTaskLookupValues } from "./taskLookup.js";
 import fs from "fs";
 import path from "path";
 
 // Tool definition
 export const updateTaskDefinition = {
   name: "updateTask",
-  description: "Update an existing task and/or move it to a workflow stage. Use this tool (not updateWorkflowStage) when changing which stage a TASK is in. For deterministic stage moves, provide workflowId + workflowStageId (top-level), or taskRequest.workflows.workflowId + stageId. Free-text workflowName/stageName are best-effort fallbacks. Response includes workflowVerification with requestedStageId and stageIdMatchesRequest.",
+  description: "Update an existing task and/or move it to a workflow stage. Use this tool (not updateWorkflowStage) when changing which stage a TASK is in. For deterministic stage moves, provide workflowId + workflowStageId (top-level), or taskRequest.workflows.workflowId + stageId. Free-text workflowName/stageName are best-effort fallbacks. After updates, the tool re-fetches the task and returns refreshed state in taskUpdate (important for completion/progress updates). Response includes workflowVerification with requestedStageId and stageIdMatchesRequest.",
   inputSchema: {
     type: 'object',
     properties: {
@@ -888,6 +889,157 @@ function extractWorkflowMoveRequest(taskRequest: TaskRequest): {
   };
 }
 
+function hasCompletionStateFields(payload: any): boolean {
+  if (!payload || typeof payload !== "object") {
+    return false;
+  }
+  return (
+    payload.progress !== undefined ||
+    payload.completedBy !== undefined ||
+    payload.completedAt !== undefined ||
+    payload.completedOn !== undefined ||
+    payload.completedDate !== undefined ||
+    payload.dateCompleted !== undefined ||
+    payload.status !== undefined ||
+    payload.completed !== undefined ||
+    payload.isCompleted !== undefined ||
+    payload.complete !== undefined
+  );
+}
+
+function isCompletionSensitiveTaskPatch(taskPatchPayload: TaskRequest): boolean {
+  const root = taskPatchPayload as any;
+  const nestedTask = root?.task && typeof root.task === "object" ? root.task : undefined;
+  return hasCompletionStateFields(root) || hasCompletionStateFields(nestedTask);
+}
+
+function parseBooleanValue(value: any): boolean | undefined {
+  if (typeof value === "boolean") {
+    return value;
+  }
+  if (typeof value === "number") {
+    return value !== 0;
+  }
+  if (typeof value === "string") {
+    const normalized = value.trim().toLowerCase();
+    if (!normalized) {
+      return undefined;
+    }
+    if (["true", "1", "yes", "y"].includes(normalized)) {
+      return true;
+    }
+    if (["false", "0", "no", "n"].includes(normalized)) {
+      return false;
+    }
+  }
+  return undefined;
+}
+
+function expectedCompletionStateFromPayload(payload: any): boolean | undefined {
+  if (!payload || typeof payload !== "object") {
+    return undefined;
+  }
+
+  const explicitCompleted =
+    parseBooleanValue(payload.completed) ??
+    parseBooleanValue(payload.isCompleted) ??
+    parseBooleanValue(payload.complete);
+  if (explicitCompleted !== undefined) {
+    return explicitCompleted;
+  }
+
+  if (
+    payload.completedBy !== undefined ||
+    payload.completedAt !== undefined ||
+    payload.completedOn !== undefined ||
+    payload.completedDate !== undefined ||
+    payload.dateCompleted !== undefined
+  ) {
+    return true;
+  }
+
+  const progress = parseOptionalInteger(payload.progress);
+  if (progress !== undefined) {
+    if (progress >= 100) {
+      return true;
+    }
+    if (progress <= 0) {
+      return false;
+    }
+  }
+
+  if (typeof payload.status === "string") {
+    const normalizedStatus = payload.status.trim().toLowerCase();
+    if (["completed", "complete", "done", "closed"].includes(normalizedStatus)) {
+      return true;
+    }
+    if (["new", "open", "active", "reopened", "incomplete", "todo", "to-do"].includes(normalizedStatus)) {
+      return false;
+    }
+  }
+
+  return undefined;
+}
+
+function expectedCompletionState(taskPatchPayload: TaskRequest): boolean | undefined {
+  const root = taskPatchPayload as any;
+  const nestedTask = root?.task && typeof root.task === "object" ? root.task : undefined;
+  return (
+    expectedCompletionStateFromPayload(root) ??
+    expectedCompletionStateFromPayload(nestedTask)
+  );
+}
+
+function inferCompletionFromTaskSnapshot(taskPayload: any): boolean | undefined {
+  const task = taskPayload?.task ?? taskPayload;
+  if (!task || typeof task !== "object") {
+    return undefined;
+  }
+
+  const normalizedStatus =
+    typeof task.statusNormalized === "string"
+      ? task.statusNormalized.trim().toLowerCase()
+      : typeof task.status === "string"
+      ? task.status.trim().toLowerCase()
+      : "";
+
+  if (["completed", "complete", "done", "closed"].includes(normalizedStatus)) {
+    return true;
+  }
+
+  const explicitCompleted =
+    parseBooleanValue(task.completed) ??
+    parseBooleanValue(task.isCompleted) ??
+    parseBooleanValue(task.complete);
+  if (explicitCompleted !== undefined) {
+    return explicitCompleted;
+  }
+
+  if (
+    task.completedAt !== undefined &&
+    task.completedAt !== null &&
+    String(task.completedAt).trim() !== ""
+  ) {
+    return true;
+  }
+
+  const progress = parseOptionalInteger(task.progress);
+  if (progress !== undefined) {
+    if (progress >= 100) {
+      return true;
+    }
+    if (progress <= 0) {
+      return false;
+    }
+  }
+
+  return undefined;
+}
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
 // Tool handler
 export async function handleUpdateTask(input: any) {
   logger.verbose("=== updateTask tool called ===");  
@@ -1064,6 +1216,10 @@ export async function handleUpdateTask(input: any) {
     }
 
     const hasTaskPatchPayload = Object.keys(taskPatchPayload as any).length > 0;
+    const completionSensitiveUpdate = hasTaskPatchPayload && isCompletionSensitiveTaskPatch(taskPatchPayload);
+    const expectedCompletion = completionSensitiveUpdate
+      ? expectedCompletionState(taskPatchPayload)
+      : undefined;
 
     let taskUpdateResponse: any = null;
     if (hasTaskPatchPayload) {
@@ -1078,13 +1234,54 @@ export async function handleUpdateTask(input: any) {
         stageId: workflowMove.stageId,
         positionAfterTask: workflowMove.positionAfterTask
       });
+    }
 
-      // Best-effort verification snapshot so agents can see the actual current stage.
+    if (!hasTaskPatchPayload && !hasWorkflowMove) {
+      return {
+        content: [{
+          type: "text",
+          text: "Nothing to update after normalization. Provide task fields and/or workflow move fields."
+        }]
+      };
+    }
+
+    let refreshedTaskPayload: any = null;
+    let refreshedTask: any = null;
+    let taskRefetchWarning: string | null = null;
+    try {
+      const refreshedTaskResponse = await teamworkService.getTaskById(taskId.toString());
+      refreshedTaskPayload = await enrichTaskLookupValues(refreshedTaskResponse);
+      refreshedTask = refreshedTaskPayload?.task ?? refreshedTaskPayload;
+
+      // Completion updates can be eventually consistent for a short period.
+      // Retry a couple of times if the refreshed task still does not match the expected completion state.
+      if (completionSensitiveUpdate && expectedCompletion !== undefined) {
+        const maxAttempts = 3;
+        for (let attempt = 1; attempt < maxAttempts; attempt += 1) {
+          const actualCompletion = inferCompletionFromTaskSnapshot(refreshedTaskPayload);
+          if (actualCompletion === expectedCompletion) {
+            break;
+          }
+          await sleep(300);
+          const retryResponse = await teamworkService.getTaskById(taskId.toString());
+          refreshedTaskPayload = await enrichTaskLookupValues(retryResponse);
+          refreshedTask = refreshedTaskPayload?.task ?? refreshedTaskPayload;
+        }
+      }
+    } catch (refreshError: any) {
+      taskRefetchWarning = `Post-update task refresh failed: ${refreshError?.message ?? "unknown error"}`;
+    }
+
+    if (hasWorkflowMove) {
       try {
-        const refreshedTaskResponse = await teamworkService.getTaskById(taskId.toString());
-        const refreshedTask = refreshedTaskResponse?.task ?? refreshedTaskResponse;
-        const workflowStages = Array.isArray(refreshedTask?.workflowStages)
-          ? refreshedTask.workflowStages
+        let verificationTask = refreshedTask;
+        if (!verificationTask) {
+          const verificationTaskResponse = await teamworkService.getTaskById(taskId.toString());
+          verificationTask = verificationTaskResponse?.task ?? verificationTaskResponse;
+        }
+
+        const workflowStages = Array.isArray(verificationTask?.workflowStages)
+          ? verificationTask.workflowStages
           : [];
         const matchedWorkflowStage =
           workflowMove.workflowId !== undefined
@@ -1115,15 +1312,6 @@ export async function handleUpdateTask(input: any) {
       }
     }
 
-    if (!hasTaskPatchPayload && !hasWorkflowMove) {
-      return {
-        content: [{
-          type: "text",
-          text: "Nothing to update after normalization. Provide task fields and/or workflow move fields."
-        }]
-      };
-    }
-
     return {
       content: [{
         type: "text",
@@ -1131,9 +1319,14 @@ export async function handleUpdateTask(input: any) {
           {
             taskUpdated: hasTaskPatchPayload,
             workflowUpdated: hasWorkflowMove,
-            taskUpdate: taskUpdateResponse,
+            completionSensitiveUpdate,
+            expectedCompletionState: completionSensitiveUpdate ? (expectedCompletion ?? null) : null,
+            taskUpdateSource: hasTaskPatchPayload ? (refreshedTaskPayload ? "refetch" : "patch-response") : null,
+            taskUpdate: hasTaskPatchPayload ? (refreshedTaskPayload ?? taskUpdateResponse) : null,
             workflowUpdate: workflowUpdateResponse,
-            workflowVerification
+            workflowVerification,
+            taskRefetched: refreshedTaskPayload !== null,
+            taskRefetchWarning
           },
           null,
           2
