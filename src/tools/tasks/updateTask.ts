@@ -9,6 +9,7 @@ import { TaskRequest } from "../../models/TaskRequest.js";
 import { createErrorResponse } from "../../utils/errorHandler.js";
 import { resolveWorkflowStageByNameForTask } from "./taskLookup.js";
 import { enrichTaskLookupValues } from "./taskLookup.js";
+import { compactTaskPayload, stringifyToolResponse, wantsRawOutput } from "./compactTaskResponse.js";
 import fs from "fs";
 import path from "path";
 
@@ -46,6 +47,14 @@ export const updateTaskDefinition = {
       stageName: {
         type: 'string',
         description: 'Optional existing stage name/label (best-effort fallback). Tool resolves this to stageId before update and may fail if ambiguous. Prefer workflowStageId/stageId from getWorkflowStages.'
+      },
+      includeRaw: {
+        type: 'boolean',
+        description: 'Return raw Teamwork update/refetch payloads in addition to compact update confirmation.'
+      },
+      include_raw: {
+        type: 'boolean',
+        description: 'Alias for includeRaw.'
       },
       taskRequest: {
         type: 'object',
@@ -1062,6 +1071,7 @@ export async function handleUpdateTask(input: any) {
     const workflowIdFromWorkflowName = parseOptionalInteger(workflowNameInput);
     const workflowName = workflowIdFromWorkflowName !== undefined ? undefined : workflowNameInput;
     const stageName = typeof input.stageName === "string" ? input.stageName.trim() : undefined;
+    const includeRaw = wantsRawOutput(input);
 
     if (!taskId) {
       logger.error("Invalid request: missing taskId");
@@ -1312,25 +1322,37 @@ export async function handleUpdateTask(input: any) {
       }
     }
 
+    const compactTaskUpdate = hasTaskPatchPayload
+      ? compactTaskPayload(refreshedTaskPayload ?? taskUpdateResponse, {
+          mode: "write",
+          includeRaw
+        })
+      : null;
+    const compactWorkflowVerification = workflowVerification && !includeRaw
+      ? {
+          matchedWorkflowStage: workflowVerification.matchedWorkflowStage,
+          requestedStageId: workflowVerification.requestedStageId,
+          stageIdMatchesRequest: workflowVerification.stageIdMatchesRequest,
+          warning: workflowVerification.warning
+        }
+      : workflowVerification;
+
     return {
       content: [{
         type: "text",
-        text: JSON.stringify(
-          {
+        text: stringifyToolResponse({
             taskUpdated: hasTaskPatchPayload,
             workflowUpdated: hasWorkflowMove,
             completionSensitiveUpdate,
             expectedCompletionState: completionSensitiveUpdate ? (expectedCompletion ?? null) : null,
             taskUpdateSource: hasTaskPatchPayload ? (refreshedTaskPayload ? "refetch" : "patch-response") : null,
-            taskUpdate: hasTaskPatchPayload ? (refreshedTaskPayload ?? taskUpdateResponse) : null,
+            taskUpdate: compactTaskUpdate,
             workflowUpdate: workflowUpdateResponse,
-            workflowVerification,
+            workflowVerification: compactWorkflowVerification,
             taskRefetched: refreshedTaskPayload !== null,
-            taskRefetchWarning
-          },
-          null,
-          2
-        )
+            taskRefetchWarning,
+            raw: includeRaw ? { taskPatchResponse: taskUpdateResponse, refreshedTask: refreshedTaskPayload } : undefined
+          })
       }]
     };
   } catch (error: any) {

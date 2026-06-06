@@ -32,6 +32,7 @@ import logger from "../../utils/logger.js";
 import { getApiClientForVersion } from "../../services/core/apiClient.js";
 import { createErrorResponse } from "../../utils/errorHandler.js";
 import { enrichTaskLookupValues } from "./taskLookup.js";
+import { compactTaskPayload, stringifyToolResponse, wantsRawOutput } from "./compactTaskResponse.js";
 
 // Tool definition
 export const getTaskSubtasksDefinition = {
@@ -55,6 +56,18 @@ export const getTaskSubtasksDefinition = {
       includeCompletedTasks: {
         type: "boolean",
         description: "Include completed tasks in the results"
+      },
+      includeRaw: {
+        type: "boolean",
+        description: "Return the original Teamwork API payload under raw in addition to compact subtask rows."
+      },
+      include_raw: {
+        type: "boolean",
+        description: "Alias for includeRaw."
+      },
+      descriptionMaxLength: {
+        type: "integer",
+        description: "Maximum length for subtask descriptionPreview in list results. Default: 280."
       }
     },
     required: ["taskId"]
@@ -70,7 +83,7 @@ export const getTaskSubtasksDefinition = {
 // Tool handler
 export async function handleGetTaskSubtasks(input: any) {
   try {
-    const { taskId, page, pageSize, includeCompletedTasks, ...otherParams } = input;
+    const { taskId, page, pageSize, includeCompletedTasks, includeRaw, include_raw, verbose, descriptionMaxLength, ...otherParams } = input;
     
     logger.info(`Getting subtasks for task ID: ${taskId}`);
     
@@ -109,11 +122,16 @@ export async function handleGetTaskSubtasks(input: any) {
       { params: queryParams }
     );
     const enrichedResponse = await enrichTaskLookupValues(response.data);
+    const compactResponse = compactTaskPayload(enrichedResponse, {
+      mode: "list",
+      includeRaw: wantsRawOutput({ includeRaw, include_raw, verbose }),
+      descriptionMaxLength: typeof descriptionMaxLength === "number" ? descriptionMaxLength : undefined
+    });
     
     return {
       content: [{
         type: "text",
-        text: JSON.stringify(enrichedResponse, null, 2)
+        text: stringifyToolResponse(compactResponse)
       }]
     };
   } catch (error: any) {

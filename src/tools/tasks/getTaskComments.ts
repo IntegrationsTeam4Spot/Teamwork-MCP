@@ -6,6 +6,7 @@
 import logger from "../../utils/logger.js"; 
 import teamworkService from "../../services/index.js";
 import { createErrorResponse } from "../../utils/errorHandler.js";
+import { compactCommentsPayload, stringifyToolResponse, wantsRawOutput } from "./compactTaskResponse.js";
 
 // Tool definition
 export const getTaskCommentsDefinition = {
@@ -48,6 +49,14 @@ export const getTaskCommentsDefinition = {
         type: "string",
         description: "Filter by comment status",
         enum: ["all", "read", "unread"]
+      },
+      includeRaw: {
+        type: "boolean",
+        description: "Return the original Teamwork API payload under raw in addition to compact comments."
+      },
+      include_raw: {
+        type: "boolean",
+        description: "Alias for includeRaw."
       }
     },
     required: ["taskId"]
@@ -83,11 +92,14 @@ export async function handleGetTaskComments(input: any) {
     if (input.commentStatus) options.commentStatus = input.commentStatus;
     
     const comments = await teamworkService.getTaskComments(taskId, options);
+    const compactComments = compactCommentsPayload(comments, {
+      includeRaw: wantsRawOutput(input)
+    });
     
     return {
       content: [{
         type: "text",
-        text: JSON.stringify(comments, null, 2)
+        text: stringifyToolResponse(compactComments)
       }]
     };
   } catch (error: any) {

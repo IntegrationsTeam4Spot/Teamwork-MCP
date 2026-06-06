@@ -7,6 +7,7 @@ import logger from "../../utils/logger.js";
 import teamworkService from "../../services/index.js";
 import { createErrorResponse } from "../../utils/errorHandler.js";
 import { enrichTaskLookupValues } from "./taskLookup.js";
+import { compactTaskPayload, stringifyToolResponse, wantsRawOutput } from "./compactTaskResponse.js";
 
 // Tool definition
 export const getTasksByProjectIdDefinition = {
@@ -18,6 +19,18 @@ export const getTasksByProjectIdDefinition = {
       projectId: {
         type: "integer",
         description: "The ID of the project to get tasks from"
+      },
+      includeRaw: {
+        type: "boolean",
+        description: "Return the original Teamwork API payload under raw in addition to compact task rows."
+      },
+      include_raw: {
+        type: "boolean",
+        description: "Alias for includeRaw."
+      },
+      descriptionMaxLength: {
+        type: "integer",
+        description: "Maximum length for task descriptionPreview in list results. Default: 280."
       }
     },
     required: ["projectId"]
@@ -43,12 +56,17 @@ export async function handleGetTasksByProjectId(input: any) {
     
     const tasks = await teamworkService.getTasksByProjectId(projectId);
     const enrichedTasks = await enrichTaskLookupValues(tasks);
+    const compactTasks = compactTaskPayload(enrichedTasks, {
+      mode: "list",
+      includeRaw: wantsRawOutput(input),
+      descriptionMaxLength: typeof input?.descriptionMaxLength === "number" ? input.descriptionMaxLength : undefined
+    });
     logger.info(`Tasks response received for project ID: ${projectId}`);
     
     return {
       content: [{
         type: "text",
-        text: JSON.stringify(enrichedTasks, null, 2)
+        text: stringifyToolResponse(compactTasks)
       }]
     };
   } catch (error: any) {

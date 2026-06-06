@@ -7,6 +7,7 @@ import logger from "../../utils/logger.js";
 import teamworkService from "../../services/index.js";
 import { createErrorResponse } from "../../utils/errorHandler.js";
 import { enrichTaskLookupValues } from "./taskLookup.js";
+import { compactTaskPayload, stringifyToolResponse, wantsRawOutput } from "./compactTaskResponse.js";
 
 // Tool definition
 export const getTasksDefinition = {
@@ -15,6 +16,18 @@ export const getTasksDefinition = {
   inputSchema: {
   type: "object",
   properties: {
+    includeRaw: {
+      type: "boolean",
+      description: "Return the original Teamwork API payload under raw in addition to compact task rows."
+    },
+    include_raw: {
+      type: "boolean",
+      description: "Alias for includeRaw."
+    },
+    descriptionMaxLength: {
+      type: "integer",
+      description: "Maximum length for task descriptionPreview in list results. Default: 280."
+    },
     updatedBefore: {
       type: "string",
       description: "filter by updated before date"
@@ -983,6 +996,12 @@ export async function handleGetTasks(input: any) {
   
   // Map camelCase field names back to API format
   const apiInput: Record<string, any> = { ...input };
+  const includeRaw = wantsRawOutput(input);
+  const descriptionMaxLength = typeof input?.descriptionMaxLength === "number" ? input.descriptionMaxLength : undefined;
+  delete apiInput.includeRaw;
+  delete apiInput.include_raw;
+  delete apiInput.verbose;
+  delete apiInput.descriptionMaxLength;
 
   // Define the mapping for fields[...] parameters
   const fieldMappings: Record<string, string> = {
@@ -1034,12 +1053,17 @@ export async function handleGetTasks(input: any) {
   try {
     const tasks = await teamworkService.getTasks(apiInput);
     const enrichedTasks = await enrichTaskLookupValues(tasks);
+    const compactTasks = compactTaskPayload(enrichedTasks, {
+      mode: "list",
+      includeRaw,
+      descriptionMaxLength
+    });
     logger.info("Tasks response received");
     
     return {
       content: [{
         type: "text",
-        text: JSON.stringify(enrichedTasks, null, 2)
+        text: stringifyToolResponse(compactTasks)
       }]
     };
   } catch (error: any) {

@@ -6,6 +6,7 @@
 import logger from "../../utils/logger.js";
 import teamworkService from "../../services/index.js";
 import { createErrorResponse } from "../../utils/errorHandler.js";
+import { compactTasklistsPayload, stringifyToolResponse, wantsRawOutput } from "./compactTaskResponse.js";
 
 // Tool definition
 export const getTaskListsByProjectIdDefinition = {
@@ -17,6 +18,14 @@ export const getTaskListsByProjectIdDefinition = {
       projectId: {
         type: "integer",
         description: "The ID of the project to get task lists from"
+      },
+      includeRaw: {
+        type: "boolean",
+        description: "Return the original Teamwork API payload under raw in addition to compact tasklist rows."
+      },
+      include_raw: {
+        type: "boolean",
+        description: "Alias for includeRaw."
       }
     },
     required: ["projectId"]
@@ -41,13 +50,16 @@ export async function handleGetTaskListsByProjectId(input: any) {
     }
     
     const taskLists = await teamworkService.getTaskListsByProjectId(projectId);
+    const compactTasklists = compactTasklistsPayload(taskLists, {
+      includeRaw: wantsRawOutput(input)
+    });
     logger.info(`Task lists response received for project ID: ${projectId}`);
     
     if (taskLists) {
       return {
         content: [{
           type: "text",
-          text: JSON.stringify(taskLists, null, 2)
+          text: stringifyToolResponse(compactTasklists)
         }]
       };
     } else {

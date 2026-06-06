@@ -7,6 +7,7 @@ import logger from "../../utils/logger.js";
 import teamworkService from "../../services/index.js";
 import { createErrorResponse } from "../../utils/errorHandler.js";
 import { enrichTaskLookupValues } from "./taskLookup.js";
+import { compactTaskPayload, stringifyToolResponse, wantsRawOutput } from "./compactTaskResponse.js";
 
 // Tool definition
 export const getTaskByIdDefinition = {
@@ -18,6 +19,14 @@ export const getTaskByIdDefinition = {
       taskId: {
         type: "integer",
         description: "The ID of the task to retrieve"
+      },
+      includeRaw: {
+        type: "boolean",
+        description: "Return the original Teamwork API payload under raw in addition to the compact task detail."
+      },
+      include_raw: {
+        type: "boolean",
+        description: "Alias for includeRaw."
       }
     },
     required: ["taskId"]
@@ -43,11 +52,16 @@ export async function handleGetTaskById(input: any) {
     
     const task = await teamworkService.getTaskById(taskId);
     const enrichedTask = await enrichTaskLookupValues(task);
+    const compactTask = compactTaskPayload(enrichedTask, {
+      mode: "detail",
+      includeRaw: wantsRawOutput(input),
+      includeFullDescription: true
+    });
     
     return {
       content: [{
         type: "text",
-        text: JSON.stringify(enrichedTask, null, 2)
+        text: stringifyToolResponse(compactTask)
       }]
     };
   } catch (error: any) {

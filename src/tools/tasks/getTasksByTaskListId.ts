@@ -32,6 +32,7 @@ import logger from "../../utils/logger.js";
 import { getApiClientForVersion } from "../../services/core/apiClient.js";
 import { createErrorResponse } from "../../utils/errorHandler.js";
 import { enrichTaskLookupValues } from "./taskLookup.js";
+import { compactTaskPayload, stringifyToolResponse, wantsRawOutput } from "./compactTaskResponse.js";
 
 // Tool definition
 export const getTasksByTaskListIdDefinition = {
@@ -55,6 +56,18 @@ export const getTasksByTaskListIdDefinition = {
       includeCompletedTasks: {
         type: "boolean",
         description: "Include completed tasks in the results"
+      },
+      includeRaw: {
+        type: "boolean",
+        description: "Return the original Teamwork API payload under raw in addition to compact task rows."
+      },
+      include_raw: {
+        type: "boolean",
+        description: "Alias for includeRaw."
+      },
+      descriptionMaxLength: {
+        type: "integer",
+        description: "Maximum length for task descriptionPreview in list results. Default: 280."
       }
     },
     required: ["tasklistId"]
@@ -70,7 +83,7 @@ export const getTasksByTaskListIdDefinition = {
 // Tool handler
 export async function handleGetTasksByTaskListId(input: any) {
   try {
-    const { tasklistId, page, pageSize, includeCompletedTasks, ...otherParams } = input;
+    const { tasklistId, page, pageSize, includeCompletedTasks, includeRaw, include_raw, verbose, descriptionMaxLength, ...otherParams } = input;
     
     logger.info(`Getting tasks for task list ID: ${tasklistId}`);
     
@@ -109,11 +122,16 @@ export async function handleGetTasksByTaskListId(input: any) {
       { params: queryParams }
     );
     const enrichedResponse = await enrichTaskLookupValues(response.data);
+    const compactResponse = compactTaskPayload(enrichedResponse, {
+      mode: "list",
+      includeRaw: wantsRawOutput({ includeRaw, include_raw, verbose }),
+      descriptionMaxLength: typeof descriptionMaxLength === "number" ? descriptionMaxLength : undefined
+    });
     
     return {
       content: [{
         type: "text",
-        text: JSON.stringify(enrichedResponse, null, 2)
+        text: stringifyToolResponse(compactResponse)
       }]
     };
   } catch (error: any) {

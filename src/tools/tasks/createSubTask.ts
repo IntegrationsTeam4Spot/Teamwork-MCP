@@ -7,6 +7,7 @@ import logger from "../../utils/logger.js";
 import teamworkService from "../../services/index.js";
 import { TaskRequest } from "../../models/TaskRequest.js";
 import { createErrorResponse } from "../../utils/errorHandler.js";
+import { compactTaskPayload, stringifyToolResponse, wantsRawOutput } from "./compactTaskResponse.js";
 
 export const createSubTaskDefinition = {
   name: "createSubTask",
@@ -14,6 +15,14 @@ export const createSubTaskDefinition = {
   inputSchema: {
   type: "object",
   properties: {
+    includeRaw: {
+      type: "boolean",
+      description: "Return the original Teamwork API payload under raw in addition to compact created-subtask confirmation."
+    },
+    include_raw: {
+      type: "boolean",
+      description: "Alias for includeRaw."
+    },
     taskRequest: {
       type: "object",
       properties: {
@@ -555,10 +564,18 @@ export async function handleCreateSubTask(input: any) {
     logger.info(`Created subtask response: ${JSON.stringify(createdSubTask).substring(0, 200)}...`);
     
     // Ensure we return a properly formatted response
+    const compactCreatedSubTask = compactTaskPayload(createdSubTask, {
+      mode: "write",
+      includeRaw: wantsRawOutput(input)
+    });
     const response = {
       content: [{
         type: "text",
-        text: JSON.stringify(createdSubTask, null, 2)
+        text: stringifyToolResponse({
+          created: true,
+          parentTaskId: Number(taskId),
+          ...compactCreatedSubTask
+        })
       }]
     };
     
